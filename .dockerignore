@@ -1,0 +1,11 @@
+**/node_modules
+**/.next
+**/dist
+**/.turbo
+**/.pgdata
+.git
+.github
+*.log
+.env
+.env.*
+!.env.production.example

@@ -1,0 +1,84 @@
+# ============================================================================
+# Comanda — produção. Isolado do RH: Postgres próprio, portas 8080-8083.
+# Variáveis em .env (copiar de .env.production.example).
+#   docker compose -f docker-compose.prod.yml up -d --build
+# ============================================================================
+name: comanda
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: comanda-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: comanda
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: comanda
+    volumes:
+      - comanda-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U comanda']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    image: comanda-app:latest
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+    container_name: comanda-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      API_PORT: 3001
+      DATABASE_URL: postgresql://comanda:${POSTGRES_PASSWORD}@db:5432/comanda?schema=public
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_ACCESS_TTL: 15m
+      JWT_REFRESH_TTL: 7d
+      CORS_ORIGINS: ${CORS_ORIGINS}
+    entrypoint: ['/app/apps/api/docker-entrypoint.sh']
+    command: ['node', 'apps/api/dist/main.js']
+    ports:
+      - '8083:3001'
+
+  storefront:
+    image: comanda-app:latest
+    container_name: comanda-storefront
+    restart: unless-stopped
+    depends_on: [api]
+    environment:
+      NODE_ENV: production
+    command: ['pnpm', '--filter', '@comanda/storefront', 'start']
+    ports:
+      - '8080:3000'
+
+  dashboard:
+    image: comanda-app:latest
+    container_name: comanda-dashboard
+    restart: unless-stopped
+    depends_on: [api]
+    environment:
+      NODE_ENV: production
+    command: ['pnpm', '--filter', '@comanda/dashboard', 'start']
+    ports:
+      - '8081:3002'
+
+  admin:
+    image: comanda-app:latest
+    container_name: comanda-admin
+    restart: unless-stopped
+    depends_on: [api]
+    environment:
+      NODE_ENV: production
+    command: ['pnpm', '--filter', '@comanda/admin', 'start']
+    ports:
+      - '8082:3003'
+
+volumes:
+  comanda-db:

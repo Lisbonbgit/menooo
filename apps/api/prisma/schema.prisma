@@ -1,0 +1,331 @@
+// ============================================================================
+// Comanda — Prisma schema
+// SaaS multi-tenant de encomendas online para restaurantes.
+// Estratégia multi-tenancy: shared database, isolamento por `tenantId` em
+// cada linha. Cada restaurante = um Tenant (com `slug` para a loja pública).
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ----------------------------------------------------------------------------
+// Enums
+// ----------------------------------------------------------------------------
+
+enum TenantStatus {
+  PENDING // registado, ainda não ativado
+  ACTIVE
+  SUSPENDED // suspenso (ex.: falta de pagamento)
+  CLOSED
+}
+
+enum PlanType {
+  FREE
+  PRO
+}
+
+enum UserRole {
+  SUPER_ADMIN // dono da plataforma (sem tenant)
+  OWNER // dono do restaurante
+  STAFF // funcionário do restaurante
+}
+
+enum UserStatus {
+  ACTIVE
+  BLOCKED
+}
+
+enum OrderType {
+  DELIVERY // entrega ao domicílio
+  PICKUP // take-away / levantamento
+}
+
+enum OrderStatus {
+  PENDING // recebido, aguarda aceitação do restaurante
+  ACCEPTED // aceite pelo restaurante
+  PREPARING // em preparação
+  READY // pronto (para levantamento/entrega)
+  OUT_FOR_DELIVERY // a caminho
+  COMPLETED // entregue / concluído
+  REJECTED // recusado pelo restaurante
+  CANCELLED // cancelado
+}
+
+enum PaymentMethod {
+  CASH // dinheiro à porta/balcão
+  CARD_ON_DELIVERY // multibanco/cartão na entrega
+  MBWAY // MB WAY online
+  CARD_ONLINE // cartão online
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum CouponType {
+  PERCENT // desconto em percentagem do subtotal
+  FIXED // desconto de valor fixo
+}
+
+// ----------------------------------------------------------------------------
+// Tenant (restaurante)
+// ----------------------------------------------------------------------------
+
+model Tenant {
+  id     String       @id @default(cuid())
+  slug   String       @unique // usado na loja pública: /loja/{slug}
+  name   String
+  status TenantStatus @default(PENDING)
+  plan   PlanType     @default(FREE)
+
+  // contacto / morada
+  email   String?
+  phone   String?
+  address String?
+  city    String?
+  zipCode String?
+
+  // definições de loja
+  currency        String   @default("EUR")
+  timezone        String   @default("Europe/Lisbon")
+  acceptsDelivery Boolean  @default(true)
+  acceptsPickup   Boolean  @default(true)
+  deliveryFee     Decimal  @default(0) @db.Decimal(10, 2)
+  minOrderValue   Decimal  @default(0) @db.Decimal(10, 2)
+  isOpen          Boolean  @default(false) // toggle manual de aberto/fechado
+
+  users         User[]
+  categories    Category[]
+  products      Product[]
+  orders        Order[]
+  openingHours  OpeningHour[]
+  deliveryZones DeliveryZone[]
+  coupons       Coupon[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+}
+
+// zona de entrega: prefixo de código postal -> taxa + mínimo próprios
+model DeliveryZone {
+  id           String  @id @default(cuid())
+  tenantId     String
+  tenant       Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name         String
+  postalPrefix String // ex.: "1000" cobre 1000-xxx
+  fee          Decimal @default(0) @db.Decimal(10, 2)
+  minOrder     Decimal @default(0) @db.Decimal(10, 2)
+  active       Boolean @default(true)
+
+  @@index([tenantId])
+}
+
+// cupão de desconto
+model Coupon {
+  id        String     @id @default(cuid())
+  tenantId  String
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  code      String // normalizado em maiúsculas
+  type      CouponType @default(PERCENT)
+  value     Decimal    @db.Decimal(10, 2) // % (0-100) ou valor fixo
+  minOrder  Decimal    @default(0) @db.Decimal(10, 2)
+  active    Boolean    @default(true)
+  expiresAt DateTime?
+  maxUses   Int? // null = ilimitado
+  usedCount Int        @default(0)
+
+  createdAt DateTime @default(now())
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+}
+
+// horário de funcionamento — uma faixa por dia da semana (0=Dom … 6=Sáb)
+model OpeningHour {
+  id         String @id @default(cuid())
+  tenantId   String
+  tenant     Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  weekday    Int // 0..6
+  openMinute Int // minutos desde a meia-noite (ex.: 12:00 = 720)
+  closeMinute Int // ex.: 23:00 = 1380
+
+  @@unique([tenantId, weekday])
+}
+
+// ----------------------------------------------------------------------------
+// Utilizadores
+// ----------------------------------------------------------------------------
+
+model User {
+  id           String     @id @default(cuid())
+  tenantId     String? // null => SUPER_ADMIN (plataforma)
+  tenant       Tenant?    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  email        String
+  passwordHash String
+  name         String
+  role         UserRole   @default(OWNER)
+  status       UserStatus @default(ACTIVE)
+
+  refreshTokens RefreshToken[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, email]) // email único por tenant
+  @@index([email])
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// ----------------------------------------------------------------------------
+// Catálogo (menu)
+// ----------------------------------------------------------------------------
+
+model Category {
+  id        String  @id @default(cuid())
+  tenantId  String
+  tenant    Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name      String
+  sortOrder Int     @default(0)
+  active    Boolean @default(true)
+
+  products Product[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  categoryId  String
+  category    Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  price       Decimal  @db.Decimal(10, 2)
+  imageUrl    String?
+  active      Boolean  @default(true)
+  sortOrder   Int      @default(0)
+
+  modifierGroups ModifierGroup[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([categoryId])
+}
+
+// grupo de opções (ex.: "Tamanho", "Extras")
+model ModifierGroup {
+  id        String     @id @default(cuid())
+  productId String
+  product   Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name      String
+  required  Boolean    @default(false)
+  minSelect Int        @default(0)
+  maxSelect Int        @default(1)
+  sortOrder Int        @default(0)
+  modifiers Modifier[]
+}
+
+// opção individual (ex.: "Grande +1.50")
+model Modifier {
+  id         String        @id @default(cuid())
+  groupId    String
+  group      ModifierGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  name       String
+  priceDelta Decimal       @default(0) @db.Decimal(10, 2)
+  sortOrder  Int           @default(0)
+}
+
+// ----------------------------------------------------------------------------
+// Encomendas
+// ----------------------------------------------------------------------------
+
+model Order {
+  id       String      @id @default(cuid())
+  tenantId String
+  tenant   Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  number   Int // número sequencial por tenant (legível)
+  status   OrderStatus @default(PENDING)
+  type     OrderType   @default(DELIVERY)
+
+  // cliente (sem conta — checkout de convidado)
+  customerName  String
+  customerPhone String
+  customerEmail String?
+
+  // entrega
+  deliveryAddress String?
+  deliveryCity    String?
+  deliveryZipCode String?
+  notes           String?
+
+  // valores
+  subtotal    Decimal @default(0) @db.Decimal(10, 2)
+  deliveryFee Decimal @default(0) @db.Decimal(10, 2)
+  discount    Decimal @default(0) @db.Decimal(10, 2)
+  couponCode  String?
+  total       Decimal @default(0) @db.Decimal(10, 2)
+
+  // pagamento
+  paymentMethod PaymentMethod @default(CASH)
+  paymentStatus PaymentStatus @default(PENDING)
+
+  items OrderItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, number])
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt])
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId String? // snapshot — produto pode ser apagado depois
+  name      String // nome no momento da encomenda
+  quantity  Int     @default(1)
+  unitPrice Decimal @db.Decimal(10, 2) // preço base + modifiers, por unidade
+  total     Decimal @db.Decimal(10, 2)
+
+  modifiers OrderItemModifier[]
+
+  @@index([orderId])
+}
+
+model OrderItemModifier {
+  id          String    @id @default(cuid())
+  orderItemId String
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  name        String
+  priceDelta  Decimal   @default(0) @db.Decimal(10, 2)
+}
