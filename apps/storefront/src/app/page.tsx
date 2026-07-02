@@ -30,7 +30,7 @@ export default function HomePage() {
               <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand text-white">
                 <Flame size={18} strokeWidth={2.4} />
               </span>
-              <span className="font-display text-xl font-semibold">Menoo</span>
+              <span className="font-display text-xl font-semibold">Menooo</span>
             </div>
             <a
               href={`${DASHBOARD_URL}/login`}
@@ -48,7 +48,7 @@ export default function HomePage() {
               As encomendas do teu restaurante, <em className="text-brand">sem intermediários.</em>
             </h1>
             <p className="mt-5 max-w-xl text-[16px] leading-relaxed text-cream/65">
-              O Menoo dá-te uma loja online própria, um painel de receção em tempo real e
+              O Menooo dá-te uma loja online própria, um painel de receção em tempo real e
               impressão automática de talões. Os clientes encomendam direto a ti — e o dinheiro é
               todo teu.
             </p>
@@ -159,7 +159,7 @@ export default function HomePage() {
       </section>
 
       <footer className="border-t border-line px-5 py-8 text-center text-[12px] text-ink-mute">
-        © {new Date().getFullYear()} Menoo — sistema de encomendas online para restaurantes
+        © {new Date().getFullYear()} Menooo — sistema de encomendas online para restaurantes
       </footer>
     </main>
   );

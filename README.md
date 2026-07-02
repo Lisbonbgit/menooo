@@ -1,4 +1,4 @@
-# Menoo 🍔
+# Menooo 🍔
 
 Plataforma **SaaS multi-tenant de encomendas online para restaurantes** — substituto self-hosted do GloriaFood.
 
@@ -42,14 +42,14 @@ pnpm --filter @comanda/api db:serve   # arranca DB + migra + semeia e fica vivo
 pnpm --filter @comanda/api dev         # API     → http://localhost:3001/api
 pnpm --filter @comanda/dashboard dev   # Painel  → http://localhost:3002
 pnpm --filter @comanda/storefront dev  # Loja    → http://localhost:3000/pizzaria-demo
-pnpm --filter @comanda/admin dev       # Admin   → http://localhost:3003 (admin@menoo.pt / admin1234)
+pnpm --filter @comanda/admin dev       # Admin   → http://localhost:3003 (admin@menooo.pt / admin1234)
 ```
 
 API em http://localhost:3001/api · Swagger em http://localhost:3001/api/docs
 
 ### Credenciais demo (após seed)
 
-- **Super admin:** `admin@menoo.pt` / `admin1234`
+- **Super admin:** `admin@menooo.pt` / `admin1234`
 - **Restaurante:** `dono@pizzaria-demo.pt` / `demo1234` (loja: `pizzaria-demo`)
 
 ## Impressão do talão (balcão)

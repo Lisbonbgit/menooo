@@ -26,7 +26,7 @@ async function bootstrap() {
   );
 
   const swagger = new DocumentBuilder()
-    .setTitle('Menoo API')
+    .setTitle('Menooo API')
     .setDescription('SaaS de encomendas online para restaurantes')
     .setVersion('0.1.0')
     .addBearerAuth()
@@ -36,7 +36,7 @@ async function bootstrap() {
   const port = Number(process.env.API_PORT ?? 3001);
   await app.listen(port);
   // eslint-disable-next-line no-console
-  console.log(`🍔 Menoo API a correr em http://localhost:${port}/api`);
+  console.log(`🍔 Menooo API a correr em http://localhost:${port}/api`);
 }
 
 bootstrap();

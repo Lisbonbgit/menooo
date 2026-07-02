@@ -165,7 +165,7 @@ export default function StorePage({ params }: { params: Promise<{ slug: string }
       </div>
 
       <footer className="mt-16 px-4 pb-6 text-center text-[11.5px] text-ink-mute">
-        loja online por <span className="font-display font-semibold text-ink-soft">Menoo</span>
+        loja online por <span className="font-display font-semibold text-ink-soft">Menooo</span>
       </footer>
 
       {optionsFor && (

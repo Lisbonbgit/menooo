@@ -17,7 +17,7 @@ const sans = Schibsted_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: 'Menoo — Encomendar',
+  title: 'Menooo — Encomendar',
   description: 'Faça a sua encomenda online, direta ao restaurante',
 };
 

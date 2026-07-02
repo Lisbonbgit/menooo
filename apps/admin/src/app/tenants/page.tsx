@@ -99,7 +99,7 @@ export default function TenantsPage() {
             </span>
             <div>
               <p className="font-display text-[17px] font-semibold leading-none text-cream">
-                Menoo
+                Menooo
               </p>
               <p className="mt-0.5 text-[10.5px] uppercase tracking-[0.16em] text-cream/40">
                 administração da plataforma
