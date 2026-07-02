@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Store, Clock, ExternalLink, Printer } from 'lucide-react';
+import { Store, Clock, ExternalLink, Printer, CreditCard, Sparkles } from 'lucide-react';
+import { api } from '@/lib/api';
 import { AppShell } from '@/components/AppShell';
 import { PrinterConfig } from '@/components/PrinterConfig';
 import {
@@ -10,7 +11,9 @@ import {
   useUpdateTenant,
   useHours,
   useSetHours,
+  useBillingConfig,
   type OpeningHour,
+  type TenantSettings,
 } from '@/lib/settings-hooks';
 
 const DAYS = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
@@ -176,6 +179,9 @@ export default function SettingsPage() {
         </button>
       </section>
 
+      {/* subscrição */}
+      {tenant.data && <BillingCard tenant={tenant.data} />}
+
       <div className="stagger grid gap-5 lg:grid-cols-2">
         {/* dados da loja */}
         <form
@@ -332,6 +338,104 @@ export default function SettingsPage() {
         </section>
       </div>
     </AppShell>
+  );
+}
+
+function BillingCard({ tenant }: { tenant: TenantSettings }) {
+  const billing = useBillingConfig();
+  const [redirecting, setRedirecting] = useState(false);
+  const sub = tenant.subscription;
+
+  // feedback ao voltar do checkout do Stripe
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    if (q.get('billing') === 'success') {
+      toast.success('Subscrição ativada! Obrigado 🎉');
+      window.history.replaceState(null, '', '/settings');
+    } else if (q.get('billing') === 'cancelled') {
+      toast.info('Pagamento cancelado — podes tentar quando quiseres.');
+      window.history.replaceState(null, '', '/settings');
+    }
+  }, []);
+
+  async function go(path: '/billing/checkout' | '/billing/portal') {
+    setRedirecting(true);
+    try {
+      const { data } = await api.post(path);
+      window.location.href = data.url;
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message ?? 'Não foi possível abrir o pagamento.');
+      setRedirecting(false);
+    }
+  }
+
+  const stateMeta =
+    sub?.state === 'PAID'
+      ? {
+          label: `Paga até ${new Date(sub.paidUntil!).toLocaleDateString('pt-PT')}`,
+          cls: 'bg-green-100 text-green-800',
+        }
+      : sub?.state === 'TRIAL'
+        ? {
+            label: `Período de teste · ${sub.daysLeft} ${sub.daysLeft === 1 ? 'dia' : 'dias'}`,
+            cls: 'bg-blue-100 text-blue-800',
+          }
+        : sub?.state === 'EXPIRED'
+          ? { label: 'Expirada — loja offline', cls: 'bg-red-100 text-red-700' }
+          : { label: 'Aguarda ativação da loja', cls: 'bg-stone-200 text-stone-600' };
+
+  const hasAutoSub = !!tenant.stripeSubscriptionId;
+
+  return (
+    <section className="animate-fade-up mb-5 rounded-2xl border border-line bg-white p-5 shadow-card">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-soft text-brand-dark">
+            <CreditCard size={17} />
+          </span>
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="font-display text-[16px] font-semibold leading-tight">Subscrição</h2>
+              <span
+                className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${stateMeta.cls}`}
+              >
+                {stateMeta.label}
+              </span>
+            </div>
+            <p className="mt-0.5 text-[12px] text-ink-mute">
+              {hasAutoSub
+                ? 'Renovação mensal automática ativa (Stripe).'
+                : 'Depois do período de teste, a loja precisa de subscrição ativa para ficar online.'}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex gap-2">
+          {hasAutoSub ? (
+            <button
+              onClick={() => go('/billing/portal')}
+              disabled={redirecting}
+              className="rounded-xl border border-line bg-white px-4 py-2.5 text-[13px] font-medium shadow-card transition-colors hover:border-brand/40 disabled:opacity-60"
+            >
+              {redirecting ? 'A abrir…' : 'Gerir pagamento e faturas'}
+            </button>
+          ) : billing.data?.enabled ? (
+            <button
+              onClick={() => go('/billing/checkout')}
+              disabled={redirecting}
+              className="flex items-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-[13.5px] font-semibold text-white shadow-lift transition-all hover:bg-brand-dark disabled:opacity-60"
+            >
+              <Sparkles size={15} />
+              {redirecting ? 'A abrir o pagamento…' : 'Ativar subscrição mensal'}
+            </button>
+          ) : (
+            <p className="max-w-56 text-right text-[12px] text-ink-mute">
+              Pagamento automático brevemente — por agora, contacta a equipa Menooo para ativar.
+            </p>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 

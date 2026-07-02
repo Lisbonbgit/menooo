@@ -42,6 +42,11 @@ services:
       JWT_ACCESS_TTL: 15m
       JWT_REFRESH_TTL: 7d
       CORS_ORIGINS: ${CORS_ORIGINS}
+      # Stripe (cobrança automática) — vazios = modo manual
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_PRICE_ID: ${STRIPE_PRICE_ID:-}
+      DASHBOARD_URL: ${DASHBOARD_URL:-http://187.124.4.163:8081}
     entrypoint: ['/app/apps/api/docker-entrypoint.sh']
     command: ['node', 'apps/api/dist/main.js']
     ports:

@@ -185,15 +185,21 @@ export function AppShell({
               Período de teste: {tenant.data.subscription.daysLeft}{' '}
               {tenant.data.subscription.daysLeft === 1 ? 'dia restante' : 'dias restantes'}.
             </strong>{' '}
-            Para a loja continuar online depois do teste, ativa a subscrição — contacta a equipa
-            Menooo.
+            Para a loja continuar online depois do teste,{' '}
+            <Link href="/settings" className="font-semibold underline">
+              ativa a subscrição nas Definições
+            </Link>
+            .
           </div>
         )}
         {tenant.data?.status === 'ACTIVE' && tenant.data.subscription?.state === 'EXPIRED' && (
           <div className="mb-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-800">
             <strong>O período de teste terminou e a tua loja está offline para os clientes.</strong>{' '}
-            O teu menu e dados estão guardados — para voltar a vender, ativa a subscrição junto da
-            equipa Menooo.
+            O teu menu e dados estão guardados — para voltar a vender,{' '}
+            <Link href="/settings" className="font-semibold underline">
+              ativa a subscrição nas Definições
+            </Link>
+            .
           </div>
         )}
         <header className="mb-6 flex flex-wrap items-center justify-between gap-3">

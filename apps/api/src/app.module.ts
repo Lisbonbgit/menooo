@@ -9,6 +9,7 @@ import { CatalogModule } from './modules/catalog/catalog.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { PromotionsModule } from './modules/promotions/promotions.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { BillingModule } from './modules/billing/billing.module';
 import { HealthModule } from './modules/health/health.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 
@@ -23,6 +24,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
     OrdersModule,
     PromotionsModule,
     AdminModule,
+    BillingModule,
     HealthModule,
   ],
   providers: [

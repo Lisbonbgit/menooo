@@ -3,6 +3,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from './api';
 
+export interface TenantSubscription {
+  state: 'NONE' | 'TRIAL' | 'PAID' | 'EXPIRED';
+  trialEndsAt: string | null;
+  paidUntil: string | null;
+  daysLeft: number | null;
+}
+
 export interface TenantSettings {
   id: string;
   name: string;
@@ -16,6 +23,15 @@ export interface TenantSettings {
   deliveryFee: string;
   minOrderValue: string;
   isOpen: boolean;
+  subscription?: TenantSubscription;
+  stripeSubscriptionId?: string | null;
+}
+
+export function useBillingConfig() {
+  return useQuery({
+    queryKey: ['billing-config'],
+    queryFn: async () => (await api.get<{ enabled: boolean }>('/billing/config')).data,
+  });
 }
 
 export interface OpeningHour {
