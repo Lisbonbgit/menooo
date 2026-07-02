@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Store, Clock, ExternalLink } from 'lucide-react';
+import { Store, Clock, ExternalLink, Printer } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
+import { PrinterConfig } from '@/components/PrinterConfig';
 import {
   useTenant,
   useUpdateTenant,
@@ -310,6 +311,24 @@ export default function SettingsPage() {
           >
             Guardar horário
           </button>
+        </section>
+
+        {/* impressão de pedidos */}
+        <section className="rounded-2xl border border-line bg-white p-5 shadow-card">
+          <div className="mb-4 flex items-center gap-3">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-soft text-brand-dark">
+              <Printer size={17} />
+            </span>
+            <div>
+              <h2 className="font-display text-[16px] font-semibold leading-tight">
+                Impressão de pedidos
+              </h2>
+              <p className="text-[12px] text-ink-mute">
+                Impressora local do balcão — a configuração fica guardada neste computador
+              </p>
+            </div>
+          </div>
+          <PrinterConfig storeName={form.name || 'Restaurante'} />
         </section>
       </div>
     </AppShell>
