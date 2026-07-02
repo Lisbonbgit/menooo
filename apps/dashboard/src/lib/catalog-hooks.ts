@@ -72,3 +72,70 @@ export function useDeleteProduct() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['products'] }),
   });
 }
+
+// ----- Grupos de opções (subgrupos dentro do produto: Tamanho, Extras…) -----
+export function useProductDetail(id: string, enabled = true) {
+  return useQuery({
+    queryKey: ['product', id],
+    queryFn: async () => (await api.get<Product>(`/catalog/products/${id}`)).data,
+    enabled,
+  });
+}
+
+export interface CreateGroupInput {
+  productId: string;
+  name: string;
+  required: boolean;
+  maxSelect: number;
+}
+
+export function useCreateModifierGroup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ productId, name, required, maxSelect }: CreateGroupInput) =>
+      (
+        await api.post(`/catalog/products/${productId}/modifier-groups`, {
+          name,
+          required,
+          minSelect: required ? 1 : 0,
+          maxSelect,
+        })
+      ).data,
+    onSuccess: (_d, vars) => qc.invalidateQueries({ queryKey: ['product', vars.productId] }),
+  });
+}
+
+export function useDeleteModifierGroup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id }: { id: string; productId: string }) =>
+      (await api.delete(`/catalog/modifier-groups/${id}`)).data,
+    onSuccess: (_d, vars) => qc.invalidateQueries({ queryKey: ['product', vars.productId] }),
+  });
+}
+
+export function useCreateModifier() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      groupId,
+      name,
+      priceDelta,
+    }: {
+      groupId: string;
+      productId: string;
+      name: string;
+      priceDelta: number;
+    }) => (await api.post(`/catalog/modifier-groups/${groupId}/modifiers`, { name, priceDelta })).data,
+    onSuccess: (_d, vars) => qc.invalidateQueries({ queryKey: ['product', vars.productId] }),
+  });
+}
+
+export function useDeleteModifier() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id }: { id: string; productId: string }) =>
+      (await api.delete(`/catalog/modifiers/${id}`)).data,
+    onSuccess: (_d, vars) => qc.invalidateQueries({ queryKey: ['product', vars.productId] }),
+  });
+}
