@@ -30,6 +30,12 @@ interface TenantLite {
   slug: string;
   isOpen: boolean;
   status: 'PENDING' | 'ACTIVE' | 'SUSPENDED' | 'CLOSED';
+  subscription?: {
+    state: 'NONE' | 'TRIAL' | 'PAID' | 'EXPIRED';
+    trialEndsAt: string | null;
+    paidUntil: string | null;
+    daysLeft: number | null;
+  };
 }
 
 export function AppShell({
@@ -171,6 +177,23 @@ export function AppShell({
         {tenant.data?.status === 'SUSPENDED' && (
           <div className="mb-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-800">
             <strong>A tua loja está suspensa.</strong> Contacta o apoio Menooo para a reativar.
+          </div>
+        )}
+        {tenant.data?.status === 'ACTIVE' && tenant.data.subscription?.state === 'TRIAL' && (
+          <div className="mb-5 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-[13px] text-blue-900">
+            <strong>
+              Período de teste: {tenant.data.subscription.daysLeft}{' '}
+              {tenant.data.subscription.daysLeft === 1 ? 'dia restante' : 'dias restantes'}.
+            </strong>{' '}
+            Para a loja continuar online depois do teste, ativa a subscrição — contacta a equipa
+            Menooo.
+          </div>
+        )}
+        {tenant.data?.status === 'ACTIVE' && tenant.data.subscription?.state === 'EXPIRED' && (
+          <div className="mb-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-800">
+            <strong>O período de teste terminou e a tua loja está offline para os clientes.</strong>{' '}
+            O teu menu e dados estão guardados — para voltar a vender, ativa a subscrição junto da
+            equipa Menooo.
           </div>
         )}
         <header className="mb-6 flex flex-wrap items-center justify-between gap-3">

@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
 import { OpeningHourDto } from './dto/opening-hours.dto';
 import { computeOpenNow } from './open-now.util';
+import { computeSubscription, isSubscriptionUsable } from './subscription.util';
 
 @Injectable()
 export class TenantsService {
@@ -14,7 +15,7 @@ export class TenantsService {
       where: { slug },
       include: { openingHours: true },
     });
-    if (!tenant || tenant.status !== 'ACTIVE') {
+    if (!tenant || tenant.status !== 'ACTIVE' || !isSubscriptionUsable(tenant)) {
       throw new NotFoundException('Loja não encontrada.');
     }
 
@@ -40,18 +41,18 @@ export class TenantsService {
       where: { slug },
       include: { openingHours: true },
     });
-    if (!tenant || tenant.status !== 'ACTIVE') return false;
+    if (!tenant || tenant.status !== 'ACTIVE' || !isSubscriptionUsable(tenant)) return false;
     return computeOpenNow(tenant, tenant.openingHours);
   }
 
-  /** Dados completos do restaurante autenticado. */
+  /** Dados completos do restaurante autenticado (inclui estado da subscrição). */
   async getMine(tenantId: string) {
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
       include: { openingHours: { orderBy: { weekday: 'asc' } } },
     });
     if (!tenant) throw new NotFoundException('Restaurante não encontrado.');
-    return tenant;
+    return { ...tenant, subscription: computeSubscription(tenant) };
   }
 
   async updateMine(tenantId: string, dto: UpdateTenantDto) {

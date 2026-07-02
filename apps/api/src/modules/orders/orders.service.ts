@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreatePublicOrderDto } from './dto/create-order.dto';
 import { OrdersGateway } from './orders.gateway';
 import { computeOpenNow } from '../tenants/open-now.util';
+import { isSubscriptionUsable } from '../tenants/subscription.util';
 import { PromotionsService } from '../promotions/promotions.service';
 
 // trabalhar em cêntimos evita erros de vírgula flutuante
@@ -42,7 +43,7 @@ export class OrdersService {
       where: { slug },
       include: { openingHours: true, deliveryZones: true },
     });
-    if (!tenant || tenant.status !== 'ACTIVE') {
+    if (!tenant || tenant.status !== 'ACTIVE' || !isSubscriptionUsable(tenant)) {
       throw new NotFoundException('Loja não encontrada.');
     }
     if (!computeOpenNow(tenant, tenant.openingHours)) {

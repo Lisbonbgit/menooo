@@ -1,6 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { OrderStatus, TenantStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { computeSubscription } from '../tenants/subscription.util';
+
+const TRIAL_DAYS = 7;
 
 // encomendas que contam para vendas/clientes (exclui recusadas/canceladas)
 const COUNTED: OrderStatus[] = [
@@ -21,22 +24,28 @@ export class AdminService {
   /** Números da plataforma para o topo do painel. */
   async stats() {
     const d30 = daysAgo(30);
-    const [total, active, pending, gmvAll, gmv30, newTenants30] = await Promise.all([
-      this.prisma.tenant.count(),
-      this.prisma.tenant.count({ where: { status: 'ACTIVE' } }),
-      this.prisma.tenant.count({ where: { status: 'PENDING' } }),
-      this.prisma.order.aggregate({
-        where: { status: { in: COUNTED } },
-        _count: { _all: true },
-        _sum: { total: true },
-      }),
-      this.prisma.order.aggregate({
-        where: { status: { in: COUNTED }, createdAt: { gte: d30 } },
-        _count: { _all: true },
-        _sum: { total: true },
-      }),
-      this.prisma.tenant.count({ where: { createdAt: { gte: d30 } } }),
-    ]);
+    const [total, active, pending, gmvAll, gmv30, newTenants30, subsAll, subs30] =
+      await Promise.all([
+        this.prisma.tenant.count(),
+        this.prisma.tenant.count({ where: { status: 'ACTIVE' } }),
+        this.prisma.tenant.count({ where: { status: 'PENDING' } }),
+        this.prisma.order.aggregate({
+          where: { status: { in: COUNTED } },
+          _count: { _all: true },
+          _sum: { total: true },
+        }),
+        this.prisma.order.aggregate({
+          where: { status: { in: COUNTED }, createdAt: { gte: d30 } },
+          _count: { _all: true },
+          _sum: { total: true },
+        }),
+        this.prisma.tenant.count({ where: { createdAt: { gte: d30 } } }),
+        this.prisma.subscriptionPayment.aggregate({ _sum: { amount: true } }),
+        this.prisma.subscriptionPayment.aggregate({
+          where: { createdAt: { gte: d30 } },
+          _sum: { amount: true },
+        }),
+      ]);
 
     return {
       total,
@@ -47,6 +56,9 @@ export class AdminService {
       orders30d: gmv30._count._all,
       gmv30d: Number(gmv30._sum.total ?? 0),
       newTenants30d: newTenants30,
+      // receita da PLATAFORMA (subscrições cobradas aos restaurantes)
+      subsRevenueTotal: Number(subsAll._sum.amount ?? 0),
+      subsRevenue30d: Number(subs30._sum.amount ?? 0),
     };
   }
 
@@ -95,6 +107,7 @@ export class AdminService {
       lastOrderAt: agg.get(t.id)?._max.createdAt ?? null,
       createdAt: t.createdAt,
       activatedAt: t.activatedAt,
+      subscription: computeSubscription(t),
     }));
   }
 
@@ -113,7 +126,7 @@ export class AdminService {
     const now = new Date();
     const since6m = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 5, 1));
 
-    const [allAgg, customerPairs, recent6m, topProducts, recentOrders] = await Promise.all([
+    const [allAgg, customerPairs, recent6m, topProducts, recentOrders, payments] = await Promise.all([
       this.prisma.order.aggregate({
         where: { tenantId: id, status: { in: COUNTED } },
         _count: { _all: true },
@@ -141,6 +154,10 @@ export class AdminService {
         orderBy: { createdAt: 'desc' },
         take: 5,
         select: { id: true, number: true, status: true, total: true, createdAt: true },
+      }),
+      this.prisma.subscriptionPayment.findMany({
+        where: { tenantId: id },
+        orderBy: { createdAt: 'desc' },
       }),
     ]);
 
@@ -178,6 +195,15 @@ export class AdminService {
       createdAt: tenant.createdAt,
       activatedAt: tenant.activatedAt,
       isOpen: tenant.isOpen,
+      subscription: computeSubscription(tenant),
+      payments: payments.map((p) => ({
+        id: p.id,
+        amount: Number(p.amount),
+        months: p.months,
+        note: p.note,
+        createdAt: p.createdAt,
+      })),
+      totalPaid: payments.reduce((s, p) => s + Number(p.amount), 0),
       metrics: {
         orders,
         revenue,
@@ -202,15 +228,56 @@ export class AdminService {
   async setTenantStatus(id: string, status: TenantStatus) {
     const tenant = await this.prisma.tenant.findUnique({ where: { id } });
     if (!tenant) throw new NotFoundException('Restaurante não encontrado.');
+
+    const firstActivation = status === TenantStatus.ACTIVE && !tenant.activatedAt;
     return this.prisma.tenant.update({
       where: { id },
       data: {
         status,
-        // regista a primeira ativação (para "ativo há X dias")
-        ...(status === TenantStatus.ACTIVE && !tenant.activatedAt
-          ? { activatedAt: new Date() }
+        // 1ª ativação: regista a data e arranca os 7 dias de teste
+        ...(firstActivation
+          ? {
+              activatedAt: new Date(),
+              trialEndsAt: new Date(Date.now() + TRIAL_DAYS * 86_400_000),
+            }
           : {}),
       },
     });
+  }
+
+  /**
+   * Regista um pagamento de subscrição (recebido por fora: transferência,
+   * MB WAY…) e estende o prazo. Base: o que acabar mais tarde entre hoje,
+   * o fim do teste e a subscrição atual — pagar cedo nunca desconta tempo.
+   */
+  async recordPayment(id: string, dto: { amount: number; months: number; note?: string }) {
+    const tenant = await this.prisma.tenant.findUnique({ where: { id } });
+    if (!tenant) throw new NotFoundException('Restaurante não encontrado.');
+    if (dto.months < 1 || dto.months > 24) {
+      throw new BadRequestException('Meses: entre 1 e 24.');
+    }
+
+    const base = new Date(
+      Math.max(
+        Date.now(),
+        tenant.paidUntil?.getTime() ?? 0,
+        tenant.trialEndsAt?.getTime() ?? 0,
+      ),
+    );
+    const paidUntil = new Date(base);
+    paidUntil.setMonth(paidUntil.getMonth() + dto.months);
+
+    const [payment, updated] = await this.prisma.$transaction([
+      this.prisma.subscriptionPayment.create({
+        data: { tenantId: id, amount: dto.amount, months: dto.months, note: dto.note },
+      }),
+      this.prisma.tenant.update({ where: { id }, data: { paidUntil } }),
+    ]);
+
+    return {
+      payment: { ...payment, amount: Number(payment.amount) },
+      paidUntil: updated.paidUntil,
+      subscription: computeSubscription(updated),
+    };
   }
 }

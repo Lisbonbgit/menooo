@@ -23,11 +23,14 @@ import {
   useTenants,
   useTenantDetail,
   useSetTenantStatus,
+  useRecordPayment,
   type AdminTenant,
   type TenantStatus,
+  type Subscription,
 } from '@/lib/admin-hooks';
 
 const STORE_URL = process.env.NEXT_PUBLIC_STORE_URL ?? 'http://187.124.4.163:8080';
+const DEFAULT_MONTHLY = 29.9; // valor sugerido da mensalidade (editável no registo)
 
 const STATUS: Record<TenantStatus, { label: string; cls: string }> = {
   PENDING: { label: 'Pendente', cls: 'bg-amber-100 text-amber-800' },
@@ -35,6 +38,22 @@ const STATUS: Record<TenantStatus, { label: string; cls: string }> = {
   SUSPENDED: { label: 'Suspenso', cls: 'bg-red-100 text-red-700' },
   CLOSED: { label: 'Fechado', cls: 'bg-stone-200 text-stone-600' },
 };
+
+function SubBadge({ sub }: { sub: Subscription }) {
+  const meta =
+    sub.state === 'PAID'
+      ? { label: `Paga até ${new Date(sub.paidUntil!).toLocaleDateString('pt-PT')}`, cls: 'bg-green-100 text-green-800' }
+      : sub.state === 'TRIAL'
+        ? { label: `Teste · ${sub.daysLeft} ${sub.daysLeft === 1 ? 'dia' : 'dias'}`, cls: 'bg-blue-100 text-blue-800' }
+        : sub.state === 'EXPIRED'
+          ? { label: 'Expirada', cls: 'bg-red-100 text-red-700' }
+          : { label: '—', cls: 'bg-stone-100 text-stone-500' };
+  return (
+    <span className={clsx('whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold', meta.cls)}>
+      {meta.label}
+    </span>
+  );
+}
 
 const eur = (v: number) =>
   v.toLocaleString('pt-PT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
@@ -126,16 +145,16 @@ export default function TenantsPage() {
         <div className="stagger mb-8 grid grid-cols-2 gap-3.5 lg:grid-cols-4">
           <StatCard
             icon={<ReceiptEuro size={16} />}
-            label="Vendas totais na plataforma"
-            value={s ? eur(s.gmvTotal) : '—'}
-            hint={s ? `${eur(s.gmv30d)} nos últimos 30 dias` : undefined}
+            label="Receita de subscrições"
+            value={s ? eurFull(s.subsRevenueTotal) : '—'}
+            hint={s ? `${eurFull(s.subsRevenue30d)} nos últimos 30 dias` : undefined}
             accent
           />
           <StatCard
             icon={<ShoppingBag size={16} />}
-            label="Encomendas totais"
-            value={s ? String(s.orders) : '—'}
-            hint={s ? `${s.orders30d} nos últimos 30 dias` : undefined}
+            label="Vendas dos restaurantes"
+            value={s ? eur(s.gmvTotal) : '—'}
+            hint={s ? `${s.orders} encomendas · ${eur(s.gmv30d)} em 30 dias` : undefined}
           />
           <StatCard
             icon={<Store size={16} />}
@@ -163,6 +182,7 @@ export default function TenantsPage() {
                 <tr className="border-b border-line text-left text-[11.5px] uppercase tracking-wide text-ink-mute">
                   <th className="px-5 py-3 font-medium">Restaurante</th>
                   <th className="px-4 py-3 font-medium">Estado</th>
+                  <th className="px-4 py-3 font-medium">Subscrição</th>
                   <th className="px-4 py-3 text-right font-medium">Clientes</th>
                   <th className="px-4 py-3 text-right font-medium">Encomendas</th>
                   <th className="px-4 py-3 text-right font-medium">Vendas</th>
@@ -195,6 +215,9 @@ export default function TenantsPage() {
                         {STATUS[t.status].label}
                       </span>
                     </td>
+                    <td className="px-4 py-3.5">
+                      <SubBadge sub={t.subscription} />
+                    </td>
                     <td className="px-4 py-3.5 text-right tabular-nums">
                       <span className="inline-flex items-center gap-1">
                         <Users size={12} className="text-ink-mute" />
@@ -214,7 +237,7 @@ export default function TenantsPage() {
                 ))}
                 {tenants.data?.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="px-5 py-12 text-center text-ink-mute">
+                    <td colSpan={9} className="px-5 py-12 text-center text-ink-mute">
                       Ainda não há restaurantes registados.
                     </td>
                   </tr>
@@ -343,6 +366,9 @@ function TenantDetailPanel({
               </button>
             </div>
 
+            {/* subscrição (a receita da plataforma com este cliente) */}
+            <SubscriptionCard d={d} />
+
             {/* KPIs */}
             <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
               <Kpi label="Vendas totais" value={eurFull(d.metrics.revenue)} strong />
@@ -455,6 +481,123 @@ function TenantDetailPanel({
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+function SubscriptionCard({
+  d,
+}: {
+  d: {
+    id: string;
+    name: string;
+    subscription: Subscription;
+    payments: { id: string; amount: number; months: number; note: string | null; createdAt: string }[];
+    totalPaid: number;
+  };
+}) {
+  const record = useRecordPayment();
+  const [months, setMonths] = useState(1);
+  const [amount, setAmount] = useState(String(DEFAULT_MONTHLY.toFixed(2)));
+  const [note, setNote] = useState('');
+  const [showHistory, setShowHistory] = useState(false);
+
+  function onMonthsChange(m: number) {
+    setMonths(m);
+    setAmount((DEFAULT_MONTHLY * m).toFixed(2));
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const value = parseFloat(amount.replace(',', '.'));
+    if (Number.isNaN(value) || value < 0) return toast.error('Valor inválido.');
+    try {
+      await record.mutateAsync({ id: d.id, amount: value, months, note: note || undefined });
+      setNote('');
+      toast.success(`Pagamento registado — subscrição estendida ${months} ${months === 1 ? 'mês' : 'meses'}`);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? 'Erro ao registar pagamento');
+    }
+  }
+
+  return (
+    <div className="mb-5 rounded-2xl border border-line bg-white p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2.5">
+          <h4 className="text-[13.5px] font-semibold">Subscrição</h4>
+          <SubBadge sub={d.subscription} />
+        </div>
+        <p className="text-[12px] text-ink-mute">
+          já faturado a este cliente:{' '}
+          <span className="font-semibold text-ink">{eurFull(d.totalPaid)}</span>
+        </p>
+      </div>
+
+      <form onSubmit={submit} className="flex flex-wrap items-end gap-2">
+        <div className="space-y-1">
+          <label className="block text-[11px] font-medium text-ink-soft">Meses</label>
+          <select
+            value={months}
+            onChange={(e) => onMonthsChange(parseInt(e.target.value, 10))}
+            className="rounded-xl border border-line bg-white px-2.5 py-2 text-[13px]"
+          >
+            {[1, 3, 6, 12].map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-1">
+          <label className="block text-[11px] font-medium text-ink-soft">Valor recebido (€)</label>
+          <input
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            className="w-24 rounded-xl border border-line bg-white px-2.5 py-2 text-[13px]"
+          />
+        </div>
+        <div className="min-w-32 flex-1 space-y-1">
+          <label className="block text-[11px] font-medium text-ink-soft">Nota (opcional)</label>
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="transferência, MB WAY, fatura nº…"
+            className="w-full rounded-xl border border-line bg-white px-2.5 py-2 text-[13px]"
+          />
+        </div>
+        <button
+          disabled={record.isPending}
+          className="rounded-xl bg-brand px-4 py-2 text-[12.5px] font-semibold text-white shadow-card transition-colors hover:bg-brand-dark disabled:opacity-60"
+        >
+          {record.isPending ? 'A registar…' : 'Registar pagamento'}
+        </button>
+      </form>
+
+      {d.payments.length > 0 && (
+        <div className="mt-3 border-t border-line pt-2.5">
+          <button
+            type="button"
+            onClick={() => setShowHistory((v) => !v)}
+            className="text-[12px] font-medium text-brand hover:underline"
+          >
+            {showHistory ? 'Esconder' : 'Ver'} histórico de pagamentos ({d.payments.length})
+          </button>
+          {showHistory && (
+            <ul className="mt-2 space-y-1">
+              {d.payments.map((p) => (
+                <li key={p.id} className="flex items-center gap-2 text-[12px] text-ink-soft">
+                  <span className="w-20">{new Date(p.createdAt).toLocaleDateString('pt-PT')}</span>
+                  <span className="w-16 font-semibold text-ink">{eurFull(p.amount)}</span>
+                  <span className="text-ink-mute">
+                    {p.months} {p.months === 1 ? 'mês' : 'meses'}
+                    {p.note ? ` · ${p.note}` : ''}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </div>
   );
 }

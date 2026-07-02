@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { isSubscriptionUsable } from '../tenants/subscription.util';
 import { CreateCategoryDto, UpdateCategoryDto } from './dto/category.dto';
 import { CreateProductDto, UpdateProductDto } from './dto/product.dto';
 import {
@@ -155,7 +156,7 @@ export class CatalogService {
 
   async getPublicMenu(slug: string) {
     const tenant = await this.prisma.tenant.findUnique({ where: { slug } });
-    if (!tenant || tenant.status !== 'ACTIVE') {
+    if (!tenant || tenant.status !== 'ACTIVE' || !isSubscriptionUsable(tenant)) {
       throw new NotFoundException('Loja não encontrada.');
     }
     return this.prisma.category.findMany({

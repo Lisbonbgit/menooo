@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Coupon, CouponType, DeliveryZone, OrderType, Prisma, Tenant } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { isSubscriptionUsable } from '../tenants/subscription.util';
 import { CreateDeliveryZoneDto, UpdateDeliveryZoneDto } from './dto/delivery-zone.dto';
 import { CreateCouponDto, UpdateCouponDto } from './dto/coupon.dto';
 
@@ -185,7 +186,7 @@ export class PromotionsService {
       where: { slug },
       include: { deliveryZones: true },
     });
-    if (!tenant || tenant.status !== 'ACTIVE') {
+    if (!tenant || tenant.status !== 'ACTIVE' || !isSubscriptionUsable(tenant)) {
       throw new NotFoundException('Loja não encontrada.');
     }
     try {
@@ -203,7 +204,7 @@ export class PromotionsService {
   /** Pré-valida um cupão e devolve o desconto estimado para um subtotal. */
   async publicValidateCoupon(slug: string, code: string, subtotal: number) {
     const tenant = await this.prisma.tenant.findUnique({ where: { slug } });
-    if (!tenant || tenant.status !== 'ACTIVE') {
+    if (!tenant || tenant.status !== 'ACTIVE' || !isSubscriptionUsable(tenant)) {
       throw new NotFoundException('Loja não encontrada.');
     }
     const ev = await this.evaluateCoupon(tenant.id, code, toCents(subtotal));

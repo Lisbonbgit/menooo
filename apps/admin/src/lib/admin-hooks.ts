@@ -5,6 +5,21 @@ import { api } from './api';
 
 export type TenantStatus = 'PENDING' | 'ACTIVE' | 'SUSPENDED' | 'CLOSED';
 
+export interface Subscription {
+  state: 'NONE' | 'TRIAL' | 'PAID' | 'EXPIRED';
+  trialEndsAt: string | null;
+  paidUntil: string | null;
+  daysLeft: number | null;
+}
+
+export interface Payment {
+  id: string;
+  amount: number;
+  months: number;
+  note: string | null;
+  createdAt: string;
+}
+
 export interface AdminTenant {
   id: string;
   slug: string;
@@ -20,6 +35,7 @@ export interface AdminTenant {
   lastOrderAt: string | null;
   createdAt: string;
   activatedAt: string | null;
+  subscription: Subscription;
 }
 
 export interface AdminStats {
@@ -31,6 +47,8 @@ export interface AdminStats {
   orders30d: number;
   gmv30d: number;
   newTenants30d: number;
+  subsRevenueTotal: number;
+  subsRevenue30d: number;
 }
 
 export interface TenantDetail {
@@ -48,6 +66,9 @@ export interface TenantDetail {
   createdAt: string;
   activatedAt: string | null;
   isOpen: boolean;
+  subscription: Subscription;
+  payments: Payment[];
+  totalPaid: number;
   metrics: {
     orders: number;
     revenue: number;
@@ -80,6 +101,28 @@ export function useTenantDetail(id: string | null) {
     queryKey: ['admin-tenant', id],
     queryFn: async () => (await api.get<TenantDetail>(`/admin/tenants/${id}`)).data,
     enabled: !!id,
+  });
+}
+
+export function useRecordPayment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      amount,
+      months,
+      note,
+    }: {
+      id: string;
+      amount: number;
+      months: number;
+      note?: string;
+    }) => (await api.post(`/admin/tenants/${id}/payments`, { amount, months, note })).data,
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ['admin-tenants'] });
+      qc.invalidateQueries({ queryKey: ['admin-stats'] });
+      qc.invalidateQueries({ queryKey: ['admin-tenant', vars.id] });
+    },
   });
 }
 
