@@ -24,6 +24,11 @@ export class AdminController {
     return this.admin.listTenants();
   }
 
+  @Get('tenants/:id')
+  tenantDetail(@Param('id') id: string) {
+    return this.admin.getTenantDetail(id);
+  }
+
   @Patch('tenants/:id/status')
   setStatus(@Param('id') id: string, @Body() dto: UpdateTenantStatusDto) {
     return this.admin.setTenantStatus(id, dto.status);

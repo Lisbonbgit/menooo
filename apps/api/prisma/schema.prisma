@@ -81,11 +81,12 @@ enum CouponType {
 // ----------------------------------------------------------------------------
 
 model Tenant {
-  id     String       @id @default(cuid())
-  slug   String       @unique // usado na loja pública: /loja/{slug}
-  name   String
-  status TenantStatus @default(PENDING)
-  plan   PlanType     @default(FREE)
+  id          String       @id @default(cuid())
+  slug        String       @unique // usado na loja pública: /loja/{slug}
+  name        String
+  status      TenantStatus @default(PENDING)
+  plan        PlanType     @default(FREE)
+  activatedAt DateTime? // primeira ativação pelo admin (para "ativo há X")
 
   // contacto / morada
   email   String?
