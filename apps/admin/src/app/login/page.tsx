@@ -43,7 +43,7 @@ export default function LoginPage() {
             <Flame size={20} className="text-brand" />
           </span>
           <div>
-            <p className="font-display text-xl font-semibold leading-none">Comanda</p>
+            <p className="font-display text-xl font-semibold leading-none">Menoo</p>
             <p className="mt-1 flex items-center gap-1 text-[11px] uppercase tracking-[0.16em] text-ink-mute">
               <ShieldCheck size={12} /> administração
             </p>

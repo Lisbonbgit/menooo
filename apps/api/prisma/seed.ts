@@ -5,7 +5,7 @@ const prisma = new PrismaClient();
 
 async function main() {
   // --- Super admin da plataforma ---
-  const adminEmail = 'admin@comanda.pt';
+  const adminEmail = 'admin@menoo.pt';
   const adminPass = await argon2.hash('admin1234');
   await prisma.user.upsert({
     where: { id: 'seed-super-admin' },

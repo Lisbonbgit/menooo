@@ -26,6 +26,6 @@ export const useAuthStore = create<AuthState>()(
       setAuth: (token, user) => set({ token, user }),
       logout: () => set({ token: null, user: null }),
     }),
-    { name: 'comanda-auth' },
+    { name: 'menoo-auth' },
   ),
 );

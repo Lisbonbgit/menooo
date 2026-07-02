@@ -22,6 +22,6 @@ export const usePrintStore = create<PrintState>()(
       setAutoPrint: (autoPrint) => set({ autoPrint }),
       setWidth: (width) => set({ width }),
     }),
-    { name: 'comanda-print' },
+    { name: 'menoo-print' },
   ),
 );

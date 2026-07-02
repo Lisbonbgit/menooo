@@ -94,7 +94,7 @@ export function AppShell({
             <Flame size={19} strokeWidth={2.4} />
           </span>
           <div>
-            <p className="font-display text-lg font-semibold leading-none text-cream">Comanda</p>
+            <p className="font-display text-lg font-semibold leading-none text-cream">Menoo</p>
             <p className="mt-1 text-[10.5px] uppercase tracking-[0.18em] text-cream/40">
               painel do restaurante
             </p>
@@ -143,7 +143,7 @@ export function AppShell({
             <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand text-white">
               <Flame size={15} />
             </span>
-            <span className="font-display text-base font-semibold text-cream">Comanda</span>
+            <span className="font-display text-base font-semibold text-cream">Menoo</span>
           </div>
           <button
             onClick={() => {
@@ -170,7 +170,7 @@ export function AppShell({
         )}
         {tenant.data?.status === 'SUSPENDED' && (
           <div className="mb-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-800">
-            <strong>A tua loja está suspensa.</strong> Contacta o apoio Comanda para a reativar.
+            <strong>A tua loja está suspensa.</strong> Contacta o apoio Menoo para a reativar.
           </div>
         )}
         <header className="mb-6 flex flex-wrap items-center justify-between gap-3">

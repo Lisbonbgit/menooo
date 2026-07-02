@@ -17,8 +17,8 @@ const sans = Schibsted_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: 'Comanda — Administração',
-  description: 'Administração da plataforma Comanda',
+  title: 'Menoo — Administração',
+  description: 'Administração da plataforma Menoo',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

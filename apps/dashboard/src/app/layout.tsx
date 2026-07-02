@@ -17,7 +17,7 @@ const sans = Schibsted_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: 'Comanda — Painel do Restaurante',
+  title: 'Menoo — Painel do Restaurante',
   description: 'Gestão de encomendas, menu e loja online',
 };
 

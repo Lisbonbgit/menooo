@@ -44,7 +44,7 @@ export default function LoginPage() {
           <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-brand text-white shadow-lift">
             <Flame size={22} strokeWidth={2.4} />
           </span>
-          <span className="font-display text-2xl font-semibold text-cream">Comanda</span>
+          <span className="font-display text-2xl font-semibold text-cream">Menoo</span>
         </div>
 
         <div className="relative max-w-md">
@@ -74,7 +74,7 @@ export default function LoginPage() {
         </div>
 
         <p className="relative text-[12px] text-cream/35">
-          © {new Date().getFullYear()} Comanda — sistema de encomendas para restaurantes
+          © {new Date().getFullYear()} Menoo — sistema de encomendas para restaurantes
         </p>
       </aside>
 
@@ -85,7 +85,7 @@ export default function LoginPage() {
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand text-white">
               <Flame size={18} />
             </span>
-            <span className="font-display text-xl font-semibold">Comanda</span>
+            <span className="font-display text-xl font-semibold">Menoo</span>
           </div>
 
           <h2 className="font-display text-[26px] font-semibold tracking-tight">Entrar no painel</h2>
