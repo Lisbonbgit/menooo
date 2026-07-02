@@ -29,6 +29,7 @@ interface TenantLite {
   name: string;
   slug: string;
   isOpen: boolean;
+  status: 'PENDING' | 'ACTIVE' | 'SUSPENDED' | 'CLOSED';
 }
 
 export function AppShell({
@@ -160,6 +161,18 @@ export function AppShell({
 
       {/* ---- conteúdo ---- */}
       <main className="min-w-0 flex-1 px-4 pb-12 pt-28 md:ml-60 md:px-8 md:pt-8">
+        {tenant.data?.status === 'PENDING' && (
+          <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-900">
+            <strong>A tua loja está em análise.</strong> Podes montar já o menu, horários e
+            impressão — fica visível ao público assim que a equipa a ativar (normalmente no
+            próprio dia).
+          </div>
+        )}
+        {tenant.data?.status === 'SUSPENDED' && (
+          <div className="mb-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-800">
+            <strong>A tua loja está suspensa.</strong> Contacta o apoio Comanda para a reativar.
+          </div>
+        )}
         <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <h1 className="font-display text-2xl font-semibold tracking-tight">{title}</h1>
           <div className="flex items-center gap-2.5">{actions}</div>

@@ -120,6 +120,13 @@ export default function LoginPage() {
           >
             {loading ? 'A entrar…' : 'Entrar'}
           </button>
+
+          <p className="mt-5 text-center text-[13px] text-ink-soft">
+            Ainda não tens conta?{' '}
+            <a href="/register" className="font-semibold text-brand hover:underline">
+              Regista o teu restaurante
+            </a>
+          </p>
         </form>
       </section>
     </main>
