@@ -36,7 +36,11 @@ RUN pnpm --filter @comanda/api prisma:generate \
 
 # build das apps Next — a URL pública da API é embebida no bundle do cliente
 ARG NEXT_PUBLIC_API_URL
+ARG NEXT_PUBLIC_STORE_URL
+ARG NEXT_PUBLIC_DASHBOARD_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_STORE_URL=$NEXT_PUBLIC_STORE_URL
+ENV NEXT_PUBLIC_DASHBOARD_URL=$NEXT_PUBLIC_DASHBOARD_URL
 ENV NODE_OPTIONS=--max-old-space-size=1536
 RUN pnpm --filter @comanda/storefront build \
  && pnpm --filter @comanda/dashboard build \
