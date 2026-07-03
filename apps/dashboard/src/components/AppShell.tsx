@@ -40,10 +40,12 @@ interface TenantLite {
 
 export function AppShell({
   title,
+  kicker,
   actions,
   children,
 }: {
   title: string;
+  kicker?: string;
   actions?: React.ReactNode;
   children: React.ReactNode;
 }) {
@@ -79,13 +81,13 @@ export function AppShell({
         key={href}
         href={href}
         className={clsx(
-          'flex shrink-0 items-center gap-3 rounded-xl px-3.5 py-2.5 text-[13.5px] font-medium transition-colors',
+          'flex shrink-0 items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors',
           active
-            ? 'bg-brand text-white shadow-card'
-            : 'text-cream/70 hover:bg-espresso-light hover:text-cream',
+            ? 'bg-brand/15 text-brand'
+            : 'text-cream/60 hover:bg-espresso-light hover:text-cream',
         )}
       >
-        <Icon size={17} strokeWidth={2.2} />
+        <Icon size={16} strokeWidth={2.2} />
         {label}
       </Link>
     );
@@ -95,19 +97,17 @@ export function AppShell({
     <div className="flex min-h-screen">
       {/* ---- barra lateral (desktop) ---- */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col bg-espresso px-4 py-6 md:flex">
-        <div className="mb-8 flex items-center gap-2.5 px-2">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand text-white shadow-lift">
-            <Flame size={19} strokeWidth={2.4} />
-          </span>
-          <div>
-            <p className="font-display text-lg font-semibold leading-none text-cream">Menooo</p>
-            <p className="mt-1 text-[10.5px] uppercase tracking-[0.18em] text-cream/40">
-              painel do restaurante
-            </p>
-          </div>
+        <div className="mb-9 flex items-center gap-2 px-2 pt-1">
+          <Flame size={19} strokeWidth={2.4} className="text-brand" />
+          <p className="font-display text-[19px] font-semibold leading-none tracking-tight text-cream">
+            Menooo
+          </p>
         </div>
 
-        <nav className="flex flex-col gap-1.5">{navLinks}</nav>
+        <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-cream/30">
+          Operação
+        </p>
+        <nav className="flex flex-col gap-1">{navLinks}</nav>
 
         <div className="mt-auto border-t border-espresso-line pt-4">
           <div className="flex items-center gap-3 px-2">
@@ -146,9 +146,7 @@ export function AppShell({
       <div className="fixed inset-x-0 top-0 z-30 flex flex-col gap-2 bg-espresso px-4 pb-2 pt-3 md:hidden">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand text-white">
-              <Flame size={15} />
-            </span>
+            <Flame size={16} className="text-brand" />
             <span className="font-display text-base font-semibold text-cream">Menooo</span>
           </div>
           <button
@@ -168,19 +166,19 @@ export function AppShell({
       {/* ---- conteúdo ---- */}
       <main className="min-w-0 flex-1 px-4 pb-12 pt-28 md:ml-60 md:px-8 md:pt-8">
         {tenant.data?.status === 'PENDING' && (
-          <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-900">
+          <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-900">
             <strong>A tua loja está em análise.</strong> Podes montar já o menu, horários e
             impressão — fica visível ao público assim que a equipa a ativar (normalmente no
             próprio dia).
           </div>
         )}
         {tenant.data?.status === 'SUSPENDED' && (
-          <div className="mb-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-800">
+          <div className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-800">
             <strong>A tua loja está suspensa.</strong> Contacta o apoio Menooo para a reativar.
           </div>
         )}
         {tenant.data?.status === 'ACTIVE' && tenant.data.subscription?.state === 'TRIAL' && (
-          <div className="mb-5 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-[13px] text-blue-900">
+          <div className="mb-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-[13px] text-blue-900">
             <strong>
               Período de teste: {tenant.data.subscription.daysLeft}{' '}
               {tenant.data.subscription.daysLeft === 1 ? 'dia restante' : 'dias restantes'}.
@@ -193,7 +191,7 @@ export function AppShell({
           </div>
         )}
         {tenant.data?.status === 'ACTIVE' && tenant.data.subscription?.state === 'EXPIRED' && (
-          <div className="mb-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-800">
+          <div className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-800">
             <strong>O período de teste terminou e a tua loja está offline para os clientes.</strong>{' '}
             O teu menu e dados estão guardados — para voltar a vender,{' '}
             <Link href="/settings" className="font-semibold underline">
@@ -202,8 +200,15 @@ export function AppShell({
             .
           </div>
         )}
-        <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
-          <h1 className="font-display text-2xl font-semibold tracking-tight">{title}</h1>
+        <header className="mb-6 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            {kicker && (
+              <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-mute">
+                {kicker}
+              </p>
+            )}
+            <h1 className="font-display text-2xl font-semibold tracking-tight">{title}</h1>
+          </div>
           <div className="flex items-center gap-2.5">{actions}</div>
         </header>
         {children}

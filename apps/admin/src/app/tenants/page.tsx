@@ -171,7 +171,7 @@ export default function TenantsPage() {
         </div>
 
         {/* tabela */}
-        <section className="animate-fade-up overflow-hidden rounded-2xl border border-line bg-white shadow-card">
+        <section className="animate-fade-up overflow-hidden rounded-xl border border-line bg-white shadow-card">
           <div className="flex items-center justify-between border-b border-line bg-cream/40 px-5 py-4">
             <h2 className="font-display text-[16px] font-semibold">Restaurantes</h2>
             <span className="text-[12px] text-ink-mute">clica numa linha para ver a ficha</span>
@@ -378,7 +378,7 @@ function TenantDetailPanel({
             </div>
 
             {/* evolução 6 meses */}
-            <div className="mb-5 rounded-2xl border border-line bg-white p-4">
+            <div className="mb-5 rounded-xl border border-line bg-white p-4">
               <div className="mb-3 flex items-baseline justify-between">
                 <h4 className="text-[13.5px] font-semibold">Vendas · últimos 6 meses</h4>
                 <span className="text-[11px] text-ink-mute">
@@ -409,7 +409,7 @@ function TenantDetailPanel({
 
             <div className="mb-5 grid gap-3 sm:grid-cols-2">
               {/* top produtos */}
-              <div className="rounded-2xl border border-line bg-white p-4">
+              <div className="rounded-xl border border-line bg-white p-4">
                 <h4 className="mb-2.5 text-[13.5px] font-semibold">Mais vendidos</h4>
                 {d.topProducts.length === 0 ? (
                   <p className="text-[12px] text-ink-mute">Ainda sem vendas.</p>
@@ -430,7 +430,7 @@ function TenantDetailPanel({
               </div>
 
               {/* últimas encomendas */}
-              <div className="rounded-2xl border border-line bg-white p-4">
+              <div className="rounded-xl border border-line bg-white p-4">
                 <h4 className="mb-2.5 text-[13.5px] font-semibold">Últimas encomendas</h4>
                 {d.recentOrders.length === 0 ? (
                   <p className="text-[12px] text-ink-mute">Ainda sem encomendas.</p>
@@ -521,7 +521,7 @@ function SubscriptionCard({
   }
 
   return (
-    <div className="mb-5 rounded-2xl border border-line bg-white p-4">
+    <div className="mb-5 rounded-xl border border-line bg-white p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2.5">
           <h4 className="text-[13.5px] font-semibold">Subscrição</h4>
@@ -606,7 +606,7 @@ function Kpi({ label, value, strong }: { label: string; value: string; strong?: 
   return (
     <div
       className={clsx(
-        'rounded-2xl border p-3.5',
+        'rounded-xl border p-3.5',
         strong ? 'border-brand/25 bg-brand text-white' : 'border-line bg-white',
       )}
     >
@@ -632,7 +632,7 @@ function StatCard({
   return (
     <div
       className={clsx(
-        'rounded-2xl border p-4 shadow-card',
+        'rounded-xl border p-4 shadow-card',
         accent ? 'border-brand/25 bg-brand text-white' : 'border-line bg-white',
       )}
     >

@@ -39,9 +39,9 @@ function SectionCard({
   children: React.ReactNode;
 }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-line bg-white shadow-card">
+    <section className="overflow-hidden rounded-xl border border-line bg-white shadow-card">
       <div className="flex items-center gap-3 border-b border-line bg-cream/40 px-5 py-4">
-        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-soft text-brand-dark">
+        <span className="text-ink-mute">
           {icon}
         </span>
         <div>

@@ -94,7 +94,7 @@ export function ProductOptions({
                 </span>
               )}
             </div>
-            <div className="overflow-hidden rounded-2xl border border-line bg-white">
+            <div className="overflow-hidden rounded-xl border border-line bg-white">
               {g.modifiers.map((m, i) => {
                 const isSel = (selected[g.id] ?? []).includes(m.id);
                 return (
@@ -130,7 +130,7 @@ export function ProductOptions({
 
         <button
           onClick={confirm}
-          className="mt-1 flex w-full items-center justify-between rounded-2xl bg-brand px-5 py-4 font-semibold text-white shadow-lift transition-all hover:bg-brand-dark active:scale-[0.99]"
+          className="mt-1 flex w-full items-center justify-between rounded-xl bg-brand px-5 py-4 font-semibold text-white shadow-lift transition-all hover:bg-brand-dark active:scale-[0.99]"
         >
           <span className="text-[14.5px]">Adicionar ao carrinho</span>
           <span className="font-display text-[16px]">{unitPrice.toFixed(2)} €</span>

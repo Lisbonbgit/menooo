@@ -22,7 +22,7 @@ export function PrinterSettings({
       >
         <div className="mb-5 flex items-center justify-between">
           <h3 className="flex items-center gap-2.5 font-display text-[19px] font-semibold">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-soft text-brand-dark">
+            <span className="text-ink-mute">
               <Printer size={17} />
             </span>
             Impressão de pedidos

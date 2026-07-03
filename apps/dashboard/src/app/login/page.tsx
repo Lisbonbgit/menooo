@@ -41,7 +41,7 @@ export default function LoginPage() {
           }}
         />
         <div className="relative flex items-center gap-3">
-          <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-brand text-white shadow-lift">
+          <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand text-white shadow-lift">
             <Flame size={22} strokeWidth={2.4} />
           </span>
           <span className="font-display text-2xl font-semibold text-cream">Menooo</span>

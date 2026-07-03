@@ -14,7 +14,7 @@ export function CartBar({ slug }: { slug: string }) {
     <div className="fixed inset-x-0 bottom-4 z-40 px-4">
       <Link
         href={`/${slug}/checkout`}
-        className="animate-sheet-up mx-auto flex max-w-md items-center justify-between rounded-2xl bg-espresso px-5 py-4 text-cream shadow-bar transition-transform active:scale-[0.99]"
+        className="animate-sheet-up mx-auto flex max-w-md items-center justify-between rounded-xl bg-espresso px-5 py-4 text-cream shadow-bar transition-transform active:scale-[0.99]"
       >
         <span className="flex items-center gap-3">
           <span className="relative">

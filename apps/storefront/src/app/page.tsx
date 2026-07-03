@@ -1,198 +1,298 @@
-import {
-  Flame,
-  BellRing,
-  Printer,
-  TrendingUp,
-  Percent,
-  Store,
-  QrCode,
-  ArrowRight,
-  Check,
-} from 'lucide-react';
+import { Flame, ArrowRight } from 'lucide-react';
 
 const DASHBOARD_URL = process.env.NEXT_PUBLIC_DASHBOARD_URL ?? 'http://187.124.4.163:8081';
+
+const FEATURES = [
+  {
+    n: '01',
+    t: 'Loja online própria',
+    d: 'Menu com tamanhos, extras e preços no teu endereço. Partilha o link ou um código QR na montra.',
+  },
+  {
+    n: '02',
+    t: 'Receção em tempo real',
+    d: 'Os pedidos chegam ao tablet do balcão com alarme sonoro e avançam por estados até à entrega.',
+  },
+  {
+    n: '03',
+    t: 'Talão na impressora',
+    d: 'Impressão automática na térmica do balcão via QZ Tray — ou em qualquer impressora, pelo browser.',
+  },
+  {
+    n: '04',
+    t: 'Zero comissões',
+    d: 'Mensalidade fixa. Cada euro vendido é do restaurante — sem percentagens sobre as encomendas.',
+  },
+  {
+    n: '05',
+    t: 'Entregas por zona',
+    d: 'Taxa e mínimo por código postal, horários por dia da semana e pausa imediata da loja.',
+  },
+  {
+    n: '06',
+    t: 'Números do negócio',
+    d: 'Encomendas, receita, ticket médio e evolução de 7 dias, visíveis ao abrir o painel.',
+  },
+];
+
+const scallopTop = {
+  backgroundImage: 'radial-gradient(circle 6px at 10px -2px, transparent 6px, #FAF6F0 6.5px)',
+  backgroundSize: '20px 12px',
+};
+const scallopBottom = {
+  backgroundImage: 'radial-gradient(circle 6px at 10px 14px, transparent 6px, #FAF6F0 6.5px)',
+  backgroundSize: '20px 12px',
+};
 
 export default function HomePage() {
   return (
     <main>
-      {/* hero */}
-      <header className="relative overflow-hidden bg-espresso px-5 pb-20 pt-8 text-cream">
+      {/* ---------- hero ---------- */}
+      <header className="relative overflow-hidden bg-espresso text-cream">
         <div
-          className="pointer-events-none absolute inset-0 opacity-[0.05]"
+          className="pointer-events-none absolute inset-0 opacity-[0.04]"
           style={{
-            backgroundImage: 'radial-gradient(#F3EBDF 1.2px, transparent 1.2px)',
-            backgroundSize: '26px 26px',
+            backgroundImage: 'radial-gradient(#F3EBDF 1px, transparent 1px)',
+            backgroundSize: '24px 24px',
           }}
         />
-        <div className="relative mx-auto max-w-4xl">
-          <nav className="mb-16 flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand text-white">
-                <Flame size={18} strokeWidth={2.4} />
-              </span>
-              <span className="font-display text-xl font-semibold">Menooo</span>
+        <div className="relative mx-auto max-w-5xl px-6">
+          <nav className="flex items-center justify-between py-7">
+            <div className="flex items-center gap-2">
+              <Flame size={20} strokeWidth={2.4} className="text-brand" />
+              <span className="font-display text-[19px] font-semibold tracking-tight">Menooo</span>
             </div>
-            <a
-              href={`${DASHBOARD_URL}/login`}
-              className="rounded-xl border border-cream/20 px-4 py-2 text-[13px] font-medium text-cream/80 transition-colors hover:bg-cream/10 hover:text-cream"
-            >
-              Entrar no painel
-            </a>
-          </nav>
-
-          <div className="max-w-2xl">
-            <p className="mb-4 inline-flex items-center gap-2 rounded-full border border-brand/40 bg-brand/10 px-3.5 py-1.5 text-[12px] font-semibold text-brand">
-              <Percent size={13} /> 0% de comissões, para sempre
-            </p>
-            <h1 className="font-display text-[42px] font-semibold leading-[1.1] tracking-tight sm:text-[54px]">
-              As encomendas do teu restaurante, <em className="text-brand">sem intermediários.</em>
-            </h1>
-            <p className="mt-5 max-w-xl text-[16px] leading-relaxed text-cream/65">
-              O Menooo dá-te uma loja online própria, um painel de receção em tempo real e
-              impressão automática de talões. Os clientes encomendam direto a ti — e o dinheiro é
-              todo teu.
-            </p>
-            <div className="mt-8 flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-6">
+              <a
+                href={`${DASHBOARD_URL}/login`}
+                className="text-[13.5px] font-medium text-cream/60 transition-colors hover:text-cream"
+              >
+                Entrar
+              </a>
               <a
                 href={`${DASHBOARD_URL}/register`}
-                className="flex items-center gap-2 rounded-2xl bg-brand px-6 py-3.5 text-[15px] font-semibold text-white shadow-lift transition-all hover:bg-brand-dark hover:scale-[1.02]"
+                className="rounded-lg bg-brand px-4 py-2 text-[13.5px] font-semibold text-white transition-colors hover:bg-brand-dark"
               >
-                Criar a minha loja grátis <ArrowRight size={17} />
-              </a>
-              <a
-                href="/pizzaria-demo"
-                className="rounded-2xl border border-cream/20 px-6 py-3.5 text-[15px] font-medium text-cream/80 transition-colors hover:bg-cream/10"
-              >
-                Ver loja de exemplo
+                Criar loja
               </a>
             </div>
+          </nav>
+
+          <div className="grid items-center gap-14 py-14 md:grid-cols-[1.15fr_0.85fr] md:py-20">
+            <div>
+              <p className="mb-5 text-[11.5px] font-semibold uppercase tracking-[0.22em] text-brand">
+                Plataforma de encomendas online
+              </p>
+              <h1 className="font-display text-[40px] font-semibold leading-[1.06] tracking-tight sm:text-[52px]">
+                O teu restaurante a vender online, <em className="text-brand">sem comissões.</em>
+              </h1>
+              <p className="mt-6 max-w-md text-[15.5px] leading-relaxed text-cream/60">
+                Loja própria, pedidos no balcão em tempo real e talão impresso automaticamente. Os
+                clientes encomendam direto — o dinheiro é todo do restaurante.
+              </p>
+              <div className="mt-9 flex flex-wrap items-center gap-5">
+                <a
+                  href={`${DASHBOARD_URL}/register`}
+                  className="group flex items-center gap-2.5 rounded-lg bg-brand px-6 py-3.5 text-[14.5px] font-semibold text-white transition-colors hover:bg-brand-dark"
+                >
+                  Começar — 7 dias grátis
+                  <ArrowRight
+                    size={16}
+                    className="transition-transform group-hover:translate-x-0.5"
+                  />
+                </a>
+                <a
+                  href="/pizzaria-demo"
+                  className="text-[13.5px] font-medium text-cream/60 underline decoration-cream/25 underline-offset-4 transition-colors hover:text-cream"
+                >
+                  Ver loja de exemplo
+                </a>
+              </div>
+              <p className="mt-6 text-[12px] text-cream/40">
+                Sem cartão de crédito para começar · €29,90/mês depois do teste · cancela quando
+                quiseres
+              </p>
+            </div>
+
+            {/* talão de cozinha */}
+            <div className="relative mx-auto w-full max-w-[290px]">
+              <div
+                className="absolute -inset-10 opacity-20 blur-3xl"
+                style={{ background: 'radial-gradient(closest-side, #E05A1E, transparent)' }}
+              />
+              <div className="relative rotate-[1.5deg] drop-shadow-2xl">
+                <div className="h-3" style={scallopTop} />
+                <div className="bg-paper px-6 pb-6 pt-5 text-ink">
+                  <p className="text-center text-[10.5px] font-semibold uppercase tracking-[0.28em] text-ink-mute">
+                    Menooo · pedido
+                  </p>
+                  <p className="mt-1 text-center font-display text-[34px] font-semibold leading-none">
+                    #42
+                  </p>
+                  <p className="mt-1.5 text-center text-[11px] uppercase tracking-[0.14em] text-ink-mute">
+                    entrega · 20:41
+                  </p>
+                  <div className="my-4 border-t border-dashed border-ink/20" />
+                  <ul className="space-y-2 text-[13px] tabular-nums">
+                    <li className="flex justify-between">
+                      <span>
+                        <span className="font-semibold text-brand-dark">2×</span> Margherita
+                      </span>
+                      <span>23,00</span>
+                    </li>
+                    <li className="pl-5 text-[11.5px] text-ink-mute">grande · massa fina</li>
+                    <li className="flex justify-between">
+                      <span>
+                        <span className="font-semibold text-brand-dark">1×</span> Diavola
+                      </span>
+                      <span>11,50</span>
+                    </li>
+                    <li className="flex justify-between">
+                      <span>
+                        <span className="font-semibold text-brand-dark">2×</span> Água 0,5 L
+                      </span>
+                      <span>2,40</span>
+                    </li>
+                  </ul>
+                  <div className="my-4 border-t border-dashed border-ink/20" />
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-mute">
+                      Total
+                    </span>
+                    <span className="font-display text-[22px] font-semibold tabular-nums">
+                      39,40 €
+                    </span>
+                  </div>
+                  <p className="mt-4 text-center text-[10.5px] uppercase tracking-[0.2em] text-ink-mute">
+                    — obrigado —
+                  </p>
+                </div>
+                <div className="h-3" style={scallopBottom} />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* faixa de factos */}
+        <div className="relative border-t border-cream/10">
+          <div className="mx-auto grid max-w-5xl grid-cols-2 divide-cream/10 px-6 sm:grid-cols-4 sm:divide-x">
+            {[
+              ['0%', 'de comissões'],
+              ['7 dias', 'de teste grátis'],
+              ['€29,90', 'por mês, fixo'],
+              ['minutos', 'até estar online'],
+            ].map(([v, l]) => (
+              <div key={l} className="py-6 text-center sm:px-4">
+                <p className="font-display text-[22px] font-semibold text-cream">{v}</p>
+                <p className="mt-0.5 text-[11.5px] uppercase tracking-[0.14em] text-cream/40">
+                  {l}
+                </p>
+              </div>
+            ))}
           </div>
         </div>
       </header>
 
-      {/* vantagens */}
-      <section className="mx-auto max-w-4xl px-5 py-16">
-        <h2 className="mb-2 text-center font-display text-3xl font-semibold tracking-tight">
-          Tudo o que o balcão precisa
-        </h2>
-        <p className="mb-10 text-center text-[14px] text-ink-soft">
-          Pensado para restaurantes, pizzarias, hamburguerias e take-aways.
+      {/* ---------- funcionalidades ---------- */}
+      <section className="mx-auto max-w-5xl px-6 py-20">
+        <p className="text-[11.5px] font-semibold uppercase tracking-[0.22em] text-brand-dark">
+          O essencial, bem feito
         </p>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <FeatureCard
-            icon={<Store size={19} />}
-            title="Loja online própria"
-            text="Menu com opções e extras, no teu endereço. Partilha o link ou usa um código QR na montra."
-          />
-          <FeatureCard
-            icon={<BellRing size={19} />}
-            title="Receção em tempo real"
-            text="Os pedidos chegam ao tablet do balcão com alarme sonoro. Aceitar, preparar, pronto, entregue — tudo num quadro."
-          />
-          <FeatureCard
-            icon={<Printer size={19} />}
-            title="Talão na térmica"
-            text="Impressão automática de cada pedido na impressora do balcão. Sem impressora térmica? Imprime pelo browser."
-          />
-          <FeatureCard
-            icon={<Percent size={19} />}
-            title="Zero comissões"
-            text="Diferente dos marketplaces: cada euro vendido é teu. Cupões e promoções controlados por ti."
-          />
-          <FeatureCard
-            icon={<QrCode size={19} />}
-            title="Entregas por zona"
-            text="Taxa e mínimo por código postal, horários por dia da semana e pausa imediata quando a cozinha aperta."
-          />
-          <FeatureCard
-            icon={<TrendingUp size={19} />}
-            title="Números do dia"
-            text="Encomendas, receita, ticket médio e evolução dos últimos 7 dias — visíveis ao abrir o painel."
-          />
+        <h2 className="mt-3 max-w-lg font-display text-[30px] font-semibold leading-tight tracking-tight">
+          Tudo o que o balcão precisa — e nada do que não precisa.
+        </h2>
+        <div className="mt-12 grid gap-x-14 gap-y-10 sm:grid-cols-2">
+          {FEATURES.map((f) => (
+            <div key={f.n} className="border-t border-line pt-5">
+              <div className="flex items-baseline gap-4">
+                <span className="font-display text-[13px] font-semibold text-brand-dark">
+                  {f.n}
+                </span>
+                <div>
+                  <h3 className="text-[15px] font-semibold">{f.t}</h3>
+                  <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink-soft">{f.d}</p>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       </section>
 
-      {/* como funciona */}
-      <section className="bg-cream/50 px-5 py-16">
-        <div className="mx-auto max-w-4xl">
-          <h2 className="mb-10 text-center font-display text-3xl font-semibold tracking-tight">
-            A funcionar em 3 passos
-          </h2>
-          <ol className="grid gap-6 sm:grid-cols-3">
-            <Step n={1} title="Regista o restaurante">
-              Cria a conta em 2 minutos: nome da loja, endereço próprio e dados de acesso.
-            </Step>
-            <Step n={2} title="Monta o menu">
-              Categorias, produtos, tamanhos e extras. Define horários, zonas de entrega e taxas.
-            </Step>
-            <Step n={3} title="Recebe pedidos">
-              Partilha o link da loja. Os pedidos caem no balcão ao vivo, com alarme e talão.
-            </Step>
-          </ol>
+      {/* ---------- como funciona ---------- */}
+      <section className="border-y border-line bg-cream/40">
+        <div className="mx-auto max-w-5xl px-6 py-16">
+          <div className="grid gap-10 md:grid-cols-3">
+            {[
+              [
+                '1',
+                'Regista o restaurante',
+                'Nome da loja, endereço próprio e dados de acesso. Dois minutos, sem cartão.',
+              ],
+              [
+                '2',
+                'Monta o menu',
+                'Categorias, produtos, tamanhos e extras. Horários, zonas de entrega e taxas.',
+              ],
+              [
+                '3',
+                'Recebe pedidos',
+                'Partilha o link. Os pedidos caem no balcão ao vivo, com alarme e talão.',
+              ],
+            ].map(([n, t, d]) => (
+              <div key={n}>
+                <span className="font-display text-[38px] font-semibold leading-none text-brand">
+                  {n}
+                </span>
+                <h3 className="mt-3 text-[15px] font-semibold">{t}</h3>
+                <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink-soft">{d}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
-      {/* CTA final */}
-      <section className="px-5 py-16">
-        <div className="mx-auto max-w-3xl rounded-3xl bg-espresso px-6 py-12 text-center text-cream shadow-lift">
-          <h2 className="font-display text-3xl font-semibold tracking-tight">
-            Pronto para vender sem comissões?
-          </h2>
-          <ul className="mx-auto mt-5 flex max-w-md flex-col gap-2 text-left text-[13.5px] text-cream/70 sm:flex-row sm:justify-center sm:gap-6">
-            <li className="flex items-center gap-1.5">
-              <Check size={15} className="text-brand" /> Sem cartão de crédito
-            </li>
-            <li className="flex items-center gap-1.5">
-              <Check size={15} className="text-brand" /> Loja pronta hoje
-            </li>
-            <li className="flex items-center gap-1.5">
-              <Check size={15} className="text-brand" /> Apoio em português
-            </li>
+      {/* ---------- preço ---------- */}
+      <section className="mx-auto max-w-5xl px-6 py-20">
+        <div className="mx-auto max-w-xl border border-ink/15 bg-white px-8 py-10 text-center">
+          <p className="text-[11.5px] font-semibold uppercase tracking-[0.22em] text-brand-dark">
+            Um plano, sem letras pequenas
+          </p>
+          <p className="mt-5 font-display text-[52px] font-semibold leading-none tracking-tight">
+            €29,90
+            <span className="font-sans text-[15px] font-medium text-ink-mute"> /mês</span>
+          </p>
+          <p className="mt-2 text-[13px] text-ink-mute">depois de 7 dias de teste gratuito</p>
+          <ul className="mx-auto mt-7 max-w-xs space-y-2.5 text-left text-[13.5px] text-ink-soft">
+            {[
+              'Encomendas ilimitadas, sem comissões',
+              'Loja, receção em tempo real e impressão',
+              'Promoções, cupões e zonas de entrega',
+              'Cancela quando quiseres, sem fidelização',
+            ].map((li) => (
+              <li key={li} className="flex gap-3">
+                <span className="text-brand-dark">—</span>
+                {li}
+              </li>
+            ))}
           </ul>
           <a
             href={`${DASHBOARD_URL}/register`}
-            className="mt-7 inline-flex items-center gap-2 rounded-2xl bg-brand px-7 py-3.5 text-[15px] font-semibold text-white shadow-lift transition-all hover:bg-brand-dark hover:scale-[1.02]"
+            className="mt-9 inline-flex items-center gap-2.5 rounded-lg bg-brand px-7 py-3.5 text-[14.5px] font-semibold text-white transition-colors hover:bg-brand-dark"
           >
-            Criar a minha loja <ArrowRight size={17} />
+            Criar a minha loja <ArrowRight size={16} />
           </a>
         </div>
       </section>
 
-      <footer className="border-t border-line px-5 py-8 text-center text-[12px] text-ink-mute">
-        © {new Date().getFullYear()} Menooo — sistema de encomendas online para restaurantes
+      <footer className="border-t border-line">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-6 py-7 text-[12px] text-ink-mute">
+          <span className="flex items-center gap-1.5">
+            <Flame size={13} className="text-brand" />
+            <span className="font-display text-[13px] font-semibold text-ink-soft">Menooo</span>
+          </span>
+          <span>© {new Date().getFullYear()} — encomendas online para restaurantes</span>
+        </div>
       </footer>
     </main>
-  );
-}
-
-function FeatureCard({
-  icon,
-  title,
-  text,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  text: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-line bg-white p-5 shadow-card transition-transform hover:-translate-y-0.5">
-      <span className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-brand-soft text-brand-dark">
-        {icon}
-      </span>
-      <h3 className="text-[15px] font-semibold">{title}</h3>
-      <p className="mt-1.5 text-[13px] leading-relaxed text-ink-soft">{text}</p>
-    </div>
-  );
-}
-
-function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
-  return (
-    <li className="rounded-2xl border border-line bg-white p-5 shadow-card">
-      <span className="mb-3 flex h-9 w-9 items-center justify-center rounded-full bg-espresso font-display text-[15px] font-semibold text-cream">
-        {n}
-      </span>
-      <h3 className="text-[15px] font-semibold">{title}</h3>
-      <p className="mt-1.5 text-[13px] leading-relaxed text-ink-soft">{children}</p>
-    </li>
   );
 }

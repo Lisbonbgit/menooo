@@ -39,7 +39,7 @@ export default function LoginPage() {
         className="animate-fade-up w-full max-w-sm rounded-3xl border border-line bg-paper p-8 shadow-lift"
       >
         <div className="mb-7 flex items-center gap-3">
-          <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-espresso text-cream">
+          <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-espresso text-cream">
             <Flame size={20} className="text-brand" />
           </span>
           <div>

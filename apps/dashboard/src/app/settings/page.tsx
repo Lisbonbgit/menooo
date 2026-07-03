@@ -150,7 +150,7 @@ export default function SettingsPage() {
       }
     >
       {/* pausa imediata */}
-      <section className="animate-fade-up mb-5 flex items-center justify-between rounded-2xl border border-line bg-white p-5 shadow-card">
+      <section className="animate-fade-up mb-5 flex items-center justify-between rounded-xl border border-line bg-white p-5 shadow-card">
         <div>
           <p className="text-[15px] font-semibold">Loja a aceitar encomendas</p>
           <p className="mt-0.5 text-[12.5px] text-ink-mute">
@@ -186,10 +186,10 @@ export default function SettingsPage() {
         {/* dados da loja */}
         <form
           onSubmit={saveSettings}
-          className="space-y-4 rounded-2xl border border-line bg-white p-5 shadow-card"
+          className="space-y-4 rounded-xl border border-line bg-white p-5 shadow-card"
         >
           <div className="flex items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-soft text-brand-dark">
+            <span className="text-ink-mute">
               <Store size={17} />
             </span>
             <h2 className="font-display text-[16px] font-semibold">Dados da loja</h2>
@@ -249,9 +249,9 @@ export default function SettingsPage() {
         </form>
 
         {/* horário */}
-        <section className="rounded-2xl border border-line bg-white p-5 shadow-card">
+        <section className="rounded-xl border border-line bg-white p-5 shadow-card">
           <div className="mb-4 flex items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-soft text-brand-dark">
+            <span className="text-ink-mute">
               <Clock size={17} />
             </span>
             <div>
@@ -320,9 +320,9 @@ export default function SettingsPage() {
         </section>
 
         {/* impressão de pedidos */}
-        <section className="rounded-2xl border border-line bg-white p-5 shadow-card">
+        <section className="rounded-xl border border-line bg-white p-5 shadow-card">
           <div className="mb-4 flex items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-soft text-brand-dark">
+            <span className="text-ink-mute">
               <Printer size={17} />
             </span>
             <div>
@@ -350,7 +350,7 @@ function BillingCard({ tenant }: { tenant: TenantSettings }) {
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
     if (q.get('billing') === 'success') {
-      toast.success('Subscrição ativada! Obrigado 🎉');
+      toast.success('Subscrição ativada');
       window.history.replaceState(null, '', '/settings');
     } else if (q.get('billing') === 'cancelled') {
       toast.info('Pagamento cancelado — podes tentar quando quiseres.');
@@ -387,10 +387,10 @@ function BillingCard({ tenant }: { tenant: TenantSettings }) {
   const hasAutoSub = !!tenant.stripeSubscriptionId;
 
   return (
-    <section className="animate-fade-up mb-5 rounded-2xl border border-line bg-white p-5 shadow-card">
+    <section className="animate-fade-up mb-5 rounded-xl border border-line bg-white p-5 shadow-card">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-soft text-brand-dark">
+          <span className="text-ink-mute">
             <CreditCard size={17} />
           </span>
           <div>

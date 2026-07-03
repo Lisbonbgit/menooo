@@ -75,7 +75,7 @@ export default function MenuPage() {
       {categories.isLoading && <p className="text-ink-mute">A carregar…</p>}
 
       {categories.data?.length === 0 && (
-        <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-line py-16 text-center">
+        <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-line py-16 text-center">
           <UtensilsCrossed size={30} className="text-ink-mute" strokeWidth={1.5} />
           <div>
             <p className="font-medium">O teu menu está vazio</p>
@@ -90,7 +90,7 @@ export default function MenuPage() {
         {categories.data?.map((cat) => (
           <section
             key={cat.id}
-            className="overflow-hidden rounded-2xl border border-line bg-white shadow-card"
+            className="overflow-hidden rounded-xl border border-line bg-white shadow-card"
           >
             <div className="flex items-center justify-between border-b border-line bg-cream/40 px-5 py-3.5">
               <h2 className="font-display text-[17px] font-semibold">{cat.name}</h2>

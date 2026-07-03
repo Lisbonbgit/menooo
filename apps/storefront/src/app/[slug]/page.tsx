@@ -99,7 +99,7 @@ export default function StorePage({ params }: { params: Promise<{ slug: string }
       {/* navegação de categorias */}
       {menu.data && menu.data.length > 1 && (
         <nav className="sticky top-0 z-20 -mt-6 px-4">
-          <div className="no-scrollbar mx-auto flex max-w-3xl gap-2 overflow-x-auto rounded-2xl border border-line bg-white p-2 shadow-lift">
+          <div className="no-scrollbar mx-auto flex max-w-3xl gap-2 overflow-x-auto rounded-xl border border-line bg-white p-2 shadow-lift">
             {menu.data.map((cat) => (
               <a
                 key={cat.id}
@@ -115,7 +115,7 @@ export default function StorePage({ params }: { params: Promise<{ slug: string }
 
       {!s.isOpen && (
         <div className="mx-auto mt-6 max-w-3xl px-4">
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-900">
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-900">
             A loja está fechada de momento — podes ver o menu, mas ainda não encomendar.
           </div>
         </div>
@@ -131,7 +131,7 @@ export default function StorePage({ params }: { params: Promise<{ slug: string }
               {cat.products.map((p) => (
                 <li
                   key={p.id}
-                  className="group flex items-stretch justify-between gap-3 rounded-2xl border border-line bg-white p-4 shadow-card transition-all hover:-translate-y-0.5 hover:shadow-lift"
+                  className="group flex items-stretch justify-between gap-3 rounded-xl border border-line bg-white p-4 shadow-card transition-all hover:-translate-y-0.5 hover:shadow-lift"
                 >
                   <div className="min-w-0">
                     <p className="text-[14.5px] font-semibold leading-snug">{p.name}</p>

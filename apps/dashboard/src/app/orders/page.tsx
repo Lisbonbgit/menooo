@@ -180,7 +180,7 @@ export default function OrdersPage() {
               </header>
               <div className="stagger flex flex-1 flex-col gap-3">
                 {list.length === 0 && (
-                  <div className="flex flex-1 flex-col items-center justify-center gap-1.5 rounded-2xl border border-dashed border-line py-8 text-center">
+                  <div className="flex flex-1 flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-line py-8 text-center">
                     <Inbox size={20} className="text-ink-mute" strokeWidth={1.5} />
                     <p className="text-[12px] text-ink-mute">{col.empty}</p>
                   </div>
@@ -248,7 +248,7 @@ function OrderCard({
   return (
     <article
       className={clsx(
-        'rounded-2xl border bg-white p-4 shadow-card transition-shadow hover:shadow-lift',
+        'rounded-xl border bg-white p-4 shadow-card transition-shadow hover:shadow-lift',
         isNew ? 'border-brand/50 animate-ring-new' : 'border-line',
       )}
     >

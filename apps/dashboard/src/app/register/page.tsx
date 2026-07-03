@@ -51,7 +51,7 @@ export default function RegisterPage() {
         password,
       });
       setAuth(data.accessToken, data.user);
-      toast.success('Loja criada! Bem-vindo ao Menooo 🎉');
+      toast.success('Loja criada — bem-vindo ao Menooo');
       router.replace('/overview');
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? 'Não foi possível criar a conta.');
@@ -75,7 +75,7 @@ export default function RegisterPage() {
           }}
         />
         <div className="relative flex items-center gap-3">
-          <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-brand text-white shadow-lift">
+          <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand text-white shadow-lift">
             <Flame size={22} strokeWidth={2.4} />
           </span>
           <span className="font-display text-2xl font-semibold text-cream">Menooo</span>

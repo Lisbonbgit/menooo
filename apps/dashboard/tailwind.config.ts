@@ -31,7 +31,7 @@ const config: Config = {
         sans: ['var(--font-sans-app)', 'system-ui', 'sans-serif'],
       },
       boxShadow: {
-        card: '0 1px 2px rgba(43,33,26,0.05), 0 6px 20px rgba(43,33,26,0.06)',
+        card: '0 1px 2px rgba(43,33,26,0.05)',
         lift: '0 2px 6px rgba(43,33,26,0.08), 0 16px 40px rgba(43,33,26,0.12)',
         pop: '0 24px 64px rgba(20,12,6,0.28)',
       },

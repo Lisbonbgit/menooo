@@ -74,17 +74,17 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             <CheckCircle2 className="text-green-600" size={34} />
           </span>
           <h1 className="font-display text-[26px] font-semibold">Encomenda enviada!</h1>
-          <p className="mt-3 rounded-2xl bg-cream/70 py-3 font-display text-lg">
+          <p className="mt-3 rounded-xl bg-cream/70 py-3 font-display text-lg">
             Pedido <strong>#{placed.number}</strong>
             <span className="mx-2 text-ink-mute">·</span>
             {Number(placed.total).toFixed(2)} €
           </p>
           <p className="mt-4 text-[13px] leading-relaxed text-ink-mute">
-            O restaurante vai confirmar a tua encomenda dentro de momentos. Obrigado! 🍕
+            O restaurante vai confirmar a tua encomenda dentro de momentos. Obrigado.
           </p>
           <Link
             href={`/${slug}`}
-            className="mt-6 block rounded-2xl bg-brand py-3 text-[14px] font-semibold text-white shadow-card transition-colors hover:bg-brand-dark"
+            className="mt-6 block rounded-xl bg-brand py-3 text-[14px] font-semibold text-white shadow-card transition-colors hover:bg-brand-dark"
           >
             Voltar à loja
           </Link>
@@ -100,7 +100,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
         <p className="text-[15px] text-ink-soft">O teu carrinho está vazio.</p>
         <Link
           href={`/${slug}`}
-          className="rounded-2xl bg-brand px-6 py-3 text-[14px] font-semibold text-white shadow-card"
+          className="rounded-xl bg-brand px-6 py-3 text-[14px] font-semibold text-white shadow-card"
         >
           Ver menu
         </Link>
@@ -175,7 +175,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
       {/* carrinho */}
       <section className="stagger mb-6 space-y-2.5">
         {items.map((i) => (
-          <div key={i.key} className="rounded-2xl border border-line bg-white p-4 shadow-card">
+          <div key={i.key} className="rounded-xl border border-line bg-white p-4 shadow-card">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-[14px] font-semibold">{i.name}</p>
@@ -240,7 +240,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
           )}
         </div>
 
-        <div className="space-y-3.5 rounded-2xl border border-line bg-white p-5 shadow-card">
+        <div className="space-y-3.5 rounded-xl border border-line bg-white p-5 shadow-card">
           <Field label="Nome">
             <input value={name} required onChange={(e) => setName(e.target.value)} className={inputCls} />
           </Field>
@@ -290,7 +290,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
         </div>
         {coupon && (
           <p className="-mt-2 text-[12.5px] font-medium text-green-700">
-            ✓ Cupão {coupon.code}: −{coupon.discount.toFixed(2)} €
+            Cupão {coupon.code}: −{coupon.discount.toFixed(2)} €
           </p>
         )}
 
@@ -313,7 +313,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
         </div>
 
         {/* totais */}
-        <div className="rounded-2xl border border-line bg-white p-5 text-[13.5px] shadow-card">
+        <div className="rounded-xl border border-line bg-white p-5 text-[13.5px] shadow-card">
           <Row label="Subtotal" value={`${sub.toFixed(2)} €`} />
           {discount > 0 && (
             <Row label={`Desconto (${coupon?.code})`} value={`−${discount.toFixed(2)} €`} green />
@@ -328,7 +328,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
         <button
           type="submit"
           disabled={loading || !s?.isOpen || !canDeliver}
-          className="w-full rounded-2xl bg-brand py-4 text-[15px] font-semibold text-white shadow-lift transition-all hover:bg-brand-dark active:scale-[0.99] disabled:opacity-50"
+          className="w-full rounded-xl bg-brand py-4 text-[15px] font-semibold text-white shadow-lift transition-all hover:bg-brand-dark active:scale-[0.99] disabled:opacity-50"
         >
           {!s?.isOpen ? 'Loja fechada' : loading ? 'A enviar…' : `Encomendar · ${total.toFixed(2)} €`}
         </button>
@@ -353,7 +353,7 @@ function ChoiceButton({
       type="button"
       onClick={onClick}
       className={
-        'flex items-center justify-center gap-2 rounded-2xl border py-3 text-[13.5px] font-semibold transition-all ' +
+        'flex items-center justify-center gap-2 rounded-xl border py-3 text-[13.5px] font-semibold transition-all ' +
         (active
           ? 'border-brand bg-brand text-white shadow-card'
           : 'border-line bg-white text-ink-soft hover:border-brand/40')
