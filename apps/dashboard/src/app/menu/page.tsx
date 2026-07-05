@@ -39,7 +39,10 @@ export default function MenuPage() {
 
   async function addCategory(e: React.FormEvent) {
     e.preventDefault();
-    if (!newCategory.trim()) return;
+    if (!newCategory.trim()) {
+      toast.error('Escreve primeiro o nome da categoria no campo ao lado (ex.: Pizzas).');
+      return;
+    }
     try {
       await createCategory.mutateAsync(newCategory.trim());
       setNewCategory('');
