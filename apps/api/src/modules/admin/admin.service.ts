@@ -47,6 +47,12 @@ export class AdminService {
         }),
       ]);
 
+    // de onde nos conhecem (respostas do registo)
+    const referrals = await this.prisma.tenant.groupBy({
+      by: ['referralSource'],
+      _count: { _all: true },
+    });
+
     return {
       total,
       active,
@@ -59,6 +65,9 @@ export class AdminService {
       // receita da PLATAFORMA (subscrições cobradas aos restaurantes)
       subsRevenueTotal: Number(subsAll._sum.amount ?? 0),
       subsRevenue30d: Number(subs30._sum.amount ?? 0),
+      referralSources: referrals
+        .map((r) => ({ source: r.referralSource, count: r._count._all }))
+        .sort((a, b) => b.count - a.count),
     };
   }
 
@@ -107,6 +116,7 @@ export class AdminService {
       lastOrderAt: agg.get(t.id)?._max.createdAt ?? null,
       createdAt: t.createdAt,
       activatedAt: t.activatedAt,
+      referralSource: t.referralSource,
       subscription: computeSubscription(t),
     }));
   }
@@ -194,6 +204,7 @@ export class AdminService {
       categories: tenant._count.categories,
       createdAt: tenant.createdAt,
       activatedAt: tenant.activatedAt,
+      referralSource: tenant.referralSource,
       isOpen: tenant.isOpen,
       subscription: computeSubscription(tenant),
       payments: payments.map((p) => ({

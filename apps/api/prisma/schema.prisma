@@ -87,6 +87,7 @@ model Tenant {
   status      TenantStatus @default(PENDING)
   plan        PlanType     @default(FREE)
   activatedAt DateTime? // primeira ativação pelo admin (para "ativo há X")
+  referralSource String? // "como nos conheceste?" respondido no registo
 
   // subscrição: 7 dias de teste a partir da ativação; depois paga
   trialEndsAt DateTime? // fim do período de teste (ativação + 7 dias)

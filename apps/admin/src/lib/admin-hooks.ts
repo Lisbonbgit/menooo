@@ -35,6 +35,7 @@ export interface AdminTenant {
   lastOrderAt: string | null;
   createdAt: string;
   activatedAt: string | null;
+  referralSource: string | null;
   subscription: Subscription;
 }
 
@@ -49,6 +50,7 @@ export interface AdminStats {
   newTenants30d: number;
   subsRevenueTotal: number;
   subsRevenue30d: number;
+  referralSources: { source: string | null; count: number }[];
 }
 
 export interface TenantDetail {
@@ -65,6 +67,7 @@ export interface TenantDetail {
   categories: number;
   createdAt: string;
   activatedAt: string | null;
+  referralSource: string | null;
   isOpen: boolean;
   subscription: Subscription;
   payments: Payment[];

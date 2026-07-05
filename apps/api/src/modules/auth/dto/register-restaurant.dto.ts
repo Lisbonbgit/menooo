@@ -1,4 +1,12 @@
-import { IsEmail, IsNotEmpty, IsString, Matches, MinLength } from 'class-validator';
+import {
+  IsEmail,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 
 /** Auto-registo de um restaurante + utilizador OWNER. */
 export class RegisterRestaurantDto {
@@ -22,4 +30,9 @@ export class RegisterRestaurantDto {
   @IsString()
   @MinLength(8, { message: 'a password deve ter pelo menos 8 caracteres' })
   password!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  referralSource?: string; // "como nos conheceste?"
 }

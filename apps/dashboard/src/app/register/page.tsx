@@ -30,6 +30,8 @@ export default function RegisterPage() {
   const [ownerName, setOwnerName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [referral, setReferral] = useState('');
+  const [referralOther, setReferralOther] = useState('');
   const [loading, setLoading] = useState(false);
 
   function onNameChange(v: string) {
@@ -43,12 +45,15 @@ export default function RegisterPage() {
     if (password.length < 8) return toast.error('A password precisa de 8+ caracteres.');
     setLoading(true);
     try {
+      const referralSource =
+        referral === 'Outro' ? referralOther.trim() || 'Outro' : referral || undefined;
       const { data } = await api.post('/auth/register', {
         restaurantName,
         slug,
         ownerName,
         email,
         password,
+        referralSource,
       });
       setAuth(data.accessToken, data.user);
       toast.success('Loja criada — bem-vindo ao Menooo');
@@ -181,6 +186,33 @@ export default function RegisterPage() {
             placeholder="mínimo 8 caracteres"
             className={`${inputCls} mb-6`}
           />
+
+          <label className="mb-1.5 block text-[13px] font-medium">
+            Como nos conheceste? <span className="font-normal text-ink-mute">(opcional)</span>
+          </label>
+          <select
+            value={referral}
+            onChange={(e) => setReferral(e.target.value)}
+            className={`${inputCls} mb-4 ${referral ? '' : 'text-ink-mute'}`}
+          >
+            <option value="">Escolhe uma opção…</option>
+            <option>Instagram</option>
+            <option>Facebook</option>
+            <option>TikTok</option>
+            <option>Google / pesquisa</option>
+            <option>Recomendação de um amigo</option>
+            <option>Contacto da equipa Menooo</option>
+            <option>Outro</option>
+          </select>
+          {referral === 'Outro' && (
+            <input
+              value={referralOther}
+              onChange={(e) => setReferralOther(e.target.value)}
+              placeholder="Conta-nos onde…"
+              maxLength={120}
+              className={`${inputCls} -mt-2 mb-4`}
+            />
+          )}
 
           <button
             type="submit"

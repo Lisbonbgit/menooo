@@ -32,6 +32,7 @@ export class AuthService {
           slug: dto.slug,
           name: dto.restaurantName,
           email: dto.email,
+          referralSource: dto.referralSource?.trim() || null,
           users: {
             create: {
               name: dto.ownerName,

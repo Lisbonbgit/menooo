@@ -170,6 +170,39 @@ export default function TenantsPage() {
           />
         </div>
 
+        {/* de onde nos conhecem */}
+        {s && s.referralSources.some((r) => r.source) && (
+          <div className="animate-fade-up mb-8 rounded-xl border border-line bg-white px-5 py-4">
+            <p className="mb-2.5 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-ink-mute">
+              Como nos conhecem
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {s.referralSources
+                .filter((r) => r.source)
+                .map((r) => (
+                  <span
+                    key={r.source}
+                    className="flex items-center gap-2 rounded-lg border border-line px-3 py-1.5 text-[12.5px]"
+                  >
+                    {r.source}
+                    <span className="font-display font-semibold text-brand-dark tabular-nums">
+                      {r.count}
+                    </span>
+                  </span>
+                ))}
+              {(() => {
+                const sem = s.referralSources.find((r) => !r.source);
+                return sem ? (
+                  <span className="flex items-center gap-2 rounded-lg border border-dashed border-line px-3 py-1.5 text-[12.5px] text-ink-mute">
+                    sem resposta
+                    <span className="tabular-nums">{sem.count}</span>
+                  </span>
+                ) : null;
+              })()}
+            </div>
+          </div>
+        )}
+
         {/* tabela */}
         <section className="animate-fade-up overflow-hidden rounded-xl border border-line bg-white shadow-card">
           <div className="flex items-center justify-between border-b border-line bg-cream/40 px-5 py-4">
@@ -354,6 +387,11 @@ function TenantDetailPanel({
                   <p className="mt-0.5 text-[12.5px] text-ink-soft">
                     {d.owner.name} · {d.owner.email}
                     {d.phone ? ` · ${d.phone}` : ''}
+                  </p>
+                )}
+                {d.referralSource && (
+                  <p className="mt-0.5 text-[12.5px] text-ink-mute">
+                    Como nos conheceu: <span className="text-ink-soft">{d.referralSource}</span>
                   </p>
                 )}
               </div>
