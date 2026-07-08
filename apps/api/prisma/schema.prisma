@@ -90,8 +90,9 @@ model Tenant {
   referralSource String? // "como nos conheceste?" respondido no registo
 
   // subscrição: 7 dias de teste a partir da ativação; depois paga
-  trialEndsAt DateTime? // fim do período de teste (ativação + 7 dias)
-  paidUntil   DateTime? // subscrição paga até esta data (estendida por pagamentos)
+  trialEndsAt         DateTime? // fim do período de teste (ativação + 7 dias)
+  trialReminderSentAt DateTime? // aviso de fim de teste já enviado (evita repetir)
+  paidUntil           DateTime? // subscrição paga até esta data (estendida por pagamentos)
 
   // Stripe Billing (cobrança mensal automática)
   stripeCustomerId     String? @unique

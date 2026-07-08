@@ -49,6 +49,13 @@ services:
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
       STRIPE_PRICE_ID: ${STRIPE_PRICE_ID:-}
       DASHBOARD_URL: ${DASHBOARD_URL:-http://187.124.4.163:8081}
+      STORE_URL: ${STORE_URL:-http://187.124.4.163:8080}
+      # Email transacional (Resend por SMTP) — vazio SMTP_HOST = desativado
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      MAIL_FROM: ${MAIL_FROM:-Menooo <onboarding@resend.dev>}
     entrypoint: ['/app/apps/api/docker-entrypoint.sh']
     command: ['node', 'apps/api/dist/main.js']
     ports:

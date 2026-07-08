@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { OrderStatus, TenantStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { MailService } from '../mail/mail.service';
 import { computeSubscription } from '../tenants/subscription.util';
 
 const TRIAL_DAYS = 7;
@@ -19,7 +20,10 @@ const daysAgo = (n: number) => new Date(Date.now() - n * 24 * 60 * 60 * 1000);
 
 @Injectable()
 export class AdminService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly mail: MailService,
+  ) {}
 
   /** Números da plataforma para o topo do painel. */
   async stats() {
@@ -237,23 +241,29 @@ export class AdminService {
   }
 
   async setTenantStatus(id: string, status: TenantStatus) {
-    const tenant = await this.prisma.tenant.findUnique({ where: { id } });
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id },
+      include: { users: { where: { role: 'OWNER' }, select: { email: true }, take: 1 } },
+    });
     if (!tenant) throw new NotFoundException('Restaurante não encontrado.');
 
     const firstActivation = status === TenantStatus.ACTIVE && !tenant.activatedAt;
-    return this.prisma.tenant.update({
+    const trialEndsAt = new Date(Date.now() + TRIAL_DAYS * 86_400_000);
+    const updated = await this.prisma.tenant.update({
       where: { id },
       data: {
         status,
         // 1ª ativação: regista a data e arranca os 7 dias de teste
-        ...(firstActivation
-          ? {
-              activatedAt: new Date(),
-              trialEndsAt: new Date(Date.now() + TRIAL_DAYS * 86_400_000),
-            }
-          : {}),
+        ...(firstActivation ? { activatedAt: new Date(), trialEndsAt } : {}),
       },
     });
+
+    // email "a tua loja está no ar" na primeira aprovação
+    if (firstActivation) {
+      const to = tenant.users[0]?.email ?? tenant.email;
+      if (to) void this.mail.sendActivated(to, tenant.name, tenant.slug, trialEndsAt);
+    }
+    return updated;
   }
 
   /**
@@ -262,7 +272,10 @@ export class AdminService {
    * o fim do teste e a subscrição atual — pagar cedo nunca desconta tempo.
    */
   async recordPayment(id: string, dto: { amount: number; months: number; note?: string }) {
-    const tenant = await this.prisma.tenant.findUnique({ where: { id } });
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id },
+      include: { users: { where: { role: 'OWNER' }, select: { email: true }, take: 1 } },
+    });
     if (!tenant) throw new NotFoundException('Restaurante não encontrado.');
     if (dto.months < 1 || dto.months > 24) {
       throw new BadRequestException('Meses: entre 1 e 24.');
@@ -284,6 +297,9 @@ export class AdminService {
       }),
       this.prisma.tenant.update({ where: { id }, data: { paidUntil } }),
     ]);
+
+    const to = tenant.users[0]?.email ?? tenant.email;
+    if (to) void this.mail.sendSubscriptionActive(to, tenant.name, paidUntil);
 
     return {
       payment: { ...payment, amount: Number(payment.amount) },

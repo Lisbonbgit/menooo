@@ -7,6 +7,7 @@ import { JwtService } from '@nestjs/jwt';
 import { Prisma, User, UserRole } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { PrismaService } from '../../prisma/prisma.service';
+import { MailService } from '../mail/mail.service';
 import { RegisterRestaurantDto } from './dto/register-restaurant.dto';
 import { LoginDto } from './dto/login.dto';
 
@@ -15,6 +16,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
+    private readonly mail: MailService,
   ) {}
 
   /** Auto-registo: cria Tenant (PENDING) + utilizador OWNER, devolve tokens. */
@@ -46,6 +48,8 @@ export class AuthService {
       });
 
       const user = tenant.users[0];
+      // email de boas-vindas (não bloqueia o registo se falhar)
+      void this.mail.sendWelcome(user.email, dto.ownerName, dto.restaurantName);
       const tokens = await this.issueTokens(user);
       return { tenant: this.sanitizeTenant(tenant), user: this.sanitizeUser(user), ...tokens };
     } catch (e) {

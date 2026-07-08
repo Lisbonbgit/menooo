@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import Stripe from 'stripe';
 import { PrismaService } from '../../prisma/prisma.service';
+import { MailService } from '../mail/mail.service';
 
 // URLs de retorno do checkout/portal (painel do restaurante)
 const DASHBOARD_URL = () => process.env.DASHBOARD_URL ?? 'http://187.124.4.163:8081';
@@ -16,9 +17,21 @@ export class BillingService {
   private readonly logger = new Logger(BillingService.name);
   private readonly stripe: Stripe | null;
 
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly mail: MailService,
+  ) {
     const key = process.env.STRIPE_SECRET_KEY;
     this.stripe = key ? new Stripe(key) : null;
+  }
+
+  /** Email do dono (OWNER) de um tenant, para notificações. */
+  private async ownerEmail(tenantId: string): Promise<string | null> {
+    const user = await this.prisma.user.findFirst({
+      where: { tenantId, role: 'OWNER' },
+      select: { email: true },
+    });
+    return user?.email ?? null;
   }
 
   /** Stripe configurado? (chave + preço) — sem isto a UI mostra o modo manual. */
@@ -134,10 +147,17 @@ export class BillingService {
 
       case 'customer.subscription.deleted': {
         const sub = event.data.object as Stripe.Subscription;
+        const tenant = await this.prisma.tenant.findFirst({
+          where: { stripeSubscriptionId: sub.id },
+        });
         await this.prisma.tenant.updateMany({
           where: { stripeSubscriptionId: sub.id },
           data: { stripeSubscriptionId: null },
         });
+        if (tenant) {
+          const to = await this.ownerEmail(tenant.id);
+          if (to) void this.mail.sendSubscriptionCancelled(to, tenant.name, tenant.paidUntil);
+        }
         this.logger.log(`subscrição cancelada no Stripe: ${sub.id} (acesso mantém-se até paidUntil)`);
         break;
       }
@@ -194,6 +214,13 @@ export class BillingService {
       }),
       this.prisma.tenant.update({ where: { id: tenant.id }, data: { paidUntil } }),
     ]);
+
+    // email de subscrição ativa (apenas na 1ª fatura, para não repetir na renovação)
+    const wasFirst = !tenant.paidUntil;
+    if (wasFirst) {
+      const to = await this.ownerEmail(tenant.id);
+      if (to) void this.mail.sendSubscriptionActive(to, tenant.name, paidUntil);
+    }
 
     this.logger.log(
       `fatura ${inv.id} aplicada: ${tenant.slug} pago até ${paidUntil.toISOString()}`,
