@@ -11,8 +11,11 @@ import {
   SlidersHorizontal,
   ChevronDown,
   X,
+  Check,
+  Pencil,
 } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
+import { ImageUploader } from '@/components/ImageUploader';
 import {
   useCategories,
   useProducts,
@@ -21,6 +24,7 @@ import {
   useCreateProduct,
   useDeleteProduct,
   useToggleProduct,
+  useUpdateProduct,
   useProductDetail,
   useCreateModifierGroup,
   useDeleteModifierGroup,
@@ -28,6 +32,9 @@ import {
   useDeleteModifier,
 } from '@/lib/catalog-hooks';
 import type { Product } from '@/lib/types';
+
+// taxas de IVA em Portugal (23 normal, 13 intermédia, 6 reduzida, 0 isento)
+const VAT_RATES = [23, 13, 6, 0];
 
 export default function MenuPage() {
   const categories = useCategories();
@@ -135,27 +142,103 @@ export default function MenuPage() {
 function ProductRow({ product }: { product: Product }) {
   const toggle = useToggleProduct();
   const del = useDeleteProduct();
+  const update = useUpdateProduct();
   const [open, setOpen] = useState(false);
+  const [editDesc, setEditDesc] = useState(false);
+  const [desc, setDesc] = useState(product.description ?? '');
+
+  async function saveDesc() {
+    try {
+      await update.mutateAsync({ id: product.id, description: desc.trim() });
+      setEditDesc(false);
+      toast.success('Descrição guardada');
+    } catch {
+      toast.error('Erro ao guardar descrição');
+    }
+  }
+
   return (
     <li>
       <div className="flex items-center justify-between gap-3 px-5 py-3">
-        <div className={product.active ? '' : 'opacity-40'}>
-          <p className="text-[14px] font-medium">
-            {product.name}
-            {!product.active && (
-              <span className="ml-2 rounded-full bg-stone-200 px-2 py-0.5 text-[10.5px] font-semibold text-stone-500">
-                oculto
-              </span>
+        <div className={'flex items-center gap-3 ' + (product.active ? '' : 'opacity-40')}>
+          <ImageUploader
+            variant="square"
+            size="sm"
+            value={product.imageUrl}
+            onChange={(url) => update.mutateAsync({ id: product.id, imageUrl: url ?? '' })}
+          />
+          <div className="min-w-0">
+            <p className="text-[14px] font-medium">
+              {product.name}
+              {!product.active && (
+                <span className="ml-2 rounded-full bg-stone-200 px-2 py-0.5 text-[10.5px] font-semibold text-stone-500">
+                  oculto
+                </span>
+              )}
+            </p>
+            {editDesc ? (
+              <div className="mt-1 flex items-start gap-1.5">
+                <textarea
+                  autoFocus
+                  value={desc}
+                  onChange={(e) => setDesc(e.target.value)}
+                  rows={2}
+                  maxLength={280}
+                  placeholder="Ex.: Molho de tomate, mozzarella e manjericão fresco"
+                  className="w-72 max-w-full resize-none rounded-lg border border-line bg-white px-2.5 py-1.5 text-[12px] outline-none focus:border-brand"
+                />
+                <button
+                  onClick={saveDesc}
+                  title="Guardar"
+                  className="rounded-lg bg-brand p-1.5 text-white hover:bg-brand-dark"
+                >
+                  <Check size={13} />
+                </button>
+                <button
+                  onClick={() => {
+                    setDesc(product.description ?? '');
+                    setEditDesc(false);
+                  }}
+                  title="Cancelar"
+                  className="rounded-lg border border-line p-1.5 text-ink-mute hover:bg-cream"
+                >
+                  <X size={13} />
+                </button>
+              </div>
+            ) : product.description ? (
+              <button
+                onClick={() => setEditDesc(true)}
+                className="group/desc mt-0.5 flex items-start gap-1 text-left text-[12px] text-ink-mute hover:text-ink"
+              >
+                <span className="line-clamp-2">{product.description}</span>
+                <Pencil size={11} className="mt-0.5 shrink-0 opacity-0 transition-opacity group-hover/desc:opacity-100" />
+              </button>
+            ) : (
+              <button
+                onClick={() => setEditDesc(true)}
+                className="mt-0.5 flex items-center gap-1 text-[12px] font-medium text-brand hover:underline"
+              >
+                <Plus size={12} /> Adicionar descrição
+              </button>
             )}
-          </p>
-          {product.description && (
-            <p className="text-[12px] text-ink-mute">{product.description}</p>
-          )}
+          </div>
         </div>
         <div className="flex items-center gap-2.5">
           <span className="rounded-lg bg-brand-soft px-2.5 py-1 text-[13px] font-semibold text-brand-dark">
             {Number(product.price).toFixed(2)} €
           </span>
+          <select
+            value={product.vatRate}
+            onChange={(e) => update.mutateAsync({ id: product.id, vatRate: Number(e.target.value) })}
+            title="Taxa de IVA (incluída no preço)"
+            className="rounded-lg border border-line bg-white px-1.5 py-1 text-[11.5px] text-ink-soft outline-none focus:border-brand"
+          >
+            {VAT_RATES.map((r) => (
+              <option key={r} value={r}>
+                IVA {r}%
+              </option>
+            ))}
+          </select>
           <button
             onClick={() => setOpen((v) => !v)}
             className={
@@ -404,6 +487,8 @@ function AddProductForm({ categoryId }: { categoryId: string }) {
   const create = useCreateProduct();
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
+  const [vatRate, setVatRate] = useState(23);
+  const [description, setDescription] = useState('');
   const [open, setOpen] = useState(false);
 
   async function submit(e: React.FormEvent) {
@@ -414,9 +499,17 @@ function AddProductForm({ categoryId }: { categoryId: string }) {
       return;
     }
     try {
-      await create.mutateAsync({ categoryId, name: name.trim(), price: priceNum });
+      await create.mutateAsync({
+        categoryId,
+        name: name.trim(),
+        price: priceNum,
+        vatRate,
+        description: description.trim() || undefined,
+      });
       setName('');
       setPrice('');
+      setVatRate(23);
+      setDescription('');
       setOpen(false);
       toast.success('Produto adicionado');
     } catch {
@@ -451,6 +544,18 @@ function AddProductForm({ categoryId }: { categoryId: string }) {
         inputMode="decimal"
         className="w-24 rounded-xl border border-line bg-white px-3 py-2 text-[13px] outline-none focus:border-brand"
       />
+      <select
+        value={vatRate}
+        onChange={(e) => setVatRate(Number(e.target.value))}
+        title="Taxa de IVA (incluída no preço)"
+        className="rounded-xl border border-line bg-white px-2 py-2 text-[13px] outline-none focus:border-brand"
+      >
+        {VAT_RATES.map((r) => (
+          <option key={r} value={r}>
+            IVA {r}%
+          </option>
+        ))}
+      </select>
       <button
         type="submit"
         className="rounded-xl bg-brand px-4 py-2 text-[13px] font-semibold text-white hover:bg-brand-dark"
@@ -464,6 +569,14 @@ function AddProductForm({ categoryId }: { categoryId: string }) {
       >
         Cancelar
       </button>
+      <textarea
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        placeholder="Descrição (opcional) — ex.: Molho de tomate, mozzarella e manjericão fresco"
+        rows={2}
+        maxLength={280}
+        className="w-full resize-none rounded-xl border border-line bg-white px-3 py-2 text-[13px] outline-none focus:border-brand"
+      />
     </form>
   );
 }

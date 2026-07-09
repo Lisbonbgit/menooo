@@ -1,6 +1,9 @@
-import { Tenant } from '@prisma/client';
+import { Account } from '@prisma/client';
 
 export type SubscriptionState = 'NONE' | 'TRIAL' | 'PAID' | 'EXPIRED';
+
+/** Objeto com a subscrição (a conta do dono, ou algo com os mesmos campos). */
+type WithSubscription = Pick<Account, 'trialEndsAt' | 'paidUntil'>;
 
 export interface SubscriptionInfo {
   state: SubscriptionState;
@@ -16,39 +19,37 @@ export interface SubscriptionInfo {
  * - PAID: subscrição paga em dia
  * - EXPIRED: teste terminado e sem pagamento válido → loja offline
  */
-export function computeSubscription(
-  tenant: Pick<Tenant, 'trialEndsAt' | 'paidUntil'>,
-): SubscriptionInfo {
+export function computeSubscription(account: WithSubscription): SubscriptionInfo {
   const now = Date.now();
-  const trial = tenant.trialEndsAt?.getTime() ?? null;
-  const paid = tenant.paidUntil?.getTime() ?? null;
+  const trial = account.trialEndsAt?.getTime() ?? null;
+  const paid = account.paidUntil?.getTime() ?? null;
 
   const days = (t: number) => Math.max(0, Math.ceil((t - now) / 86_400_000));
 
   if (paid && paid > now) {
     return {
       state: 'PAID',
-      trialEndsAt: tenant.trialEndsAt,
-      paidUntil: tenant.paidUntil,
+      trialEndsAt: account.trialEndsAt,
+      paidUntil: account.paidUntil,
       daysLeft: days(paid),
     };
   }
   if (trial && trial > now) {
     return {
       state: 'TRIAL',
-      trialEndsAt: tenant.trialEndsAt,
-      paidUntil: tenant.paidUntil,
+      trialEndsAt: account.trialEndsAt,
+      paidUntil: account.paidUntil,
       daysLeft: days(trial),
     };
   }
   if (trial || paid) {
-    return { state: 'EXPIRED', trialEndsAt: tenant.trialEndsAt, paidUntil: tenant.paidUntil, daysLeft: 0 };
+    return { state: 'EXPIRED', trialEndsAt: account.trialEndsAt, paidUntil: account.paidUntil, daysLeft: 0 };
   }
   return { state: 'NONE', trialEndsAt: null, paidUntil: null, daysLeft: null };
 }
 
-/** A loja pode estar visível/vender ao público? (ACTIVE + teste ou paga) */
-export function isSubscriptionUsable(tenant: Pick<Tenant, 'trialEndsAt' | 'paidUntil'>): boolean {
-  const s = computeSubscription(tenant).state;
+/** A conta pode ter lojas visíveis/a vender? (teste ativo ou subscrição paga) */
+export function isSubscriptionUsable(account: WithSubscription): boolean {
+  const s = computeSubscription(account).state;
   return s === 'TRIAL' || s === 'PAID';
 }

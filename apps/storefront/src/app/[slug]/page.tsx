@@ -47,6 +47,7 @@ export default function StorePage({ params }: { params: Promise<{ slug: string }
       productId: product.id,
       name: product.name,
       unitPrice: Number(product.price),
+      vatRate: product.vatRate,
       modifiers: [],
     });
     toast.success(`${product.name} no carrinho`);
@@ -55,15 +56,33 @@ export default function StorePage({ params }: { params: Promise<{ slug: string }
   return (
     <main className="pb-32">
       {/* hero */}
-      <header className="bg-espresso px-4 pb-14 pt-10 text-cream">
-        <div className="mx-auto max-w-3xl">
+      <header className="relative overflow-hidden bg-espresso px-4 pb-14 pt-10 text-cream">
+        {s.coverUrl && (
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={s.coverUrl}
+              alt=""
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-espresso via-espresso/85 to-espresso/55" />
+          </>
+        )}
+        <div className="relative mx-auto max-w-3xl">
           <div className="animate-fade-up flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <p className="mb-2 text-[11px] uppercase tracking-[0.22em] text-cream/45">
-                encomenda online · sem comissões
-              </p>
-              <h1 className="font-display text-4xl font-semibold tracking-tight">{s.name}</h1>
-              {s.city && <p className="mt-1.5 text-[13.5px] text-cream/60">{s.city}</p>}
+            <div className="flex items-end gap-4">
+              {s.logoUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={s.logoUrl}
+                  alt={s.name}
+                  className="h-16 w-16 shrink-0 rounded-2xl border border-cream/20 object-cover shadow-lift sm:h-20 sm:w-20"
+                />
+              )}
+              <div>
+                <h1 className="font-display text-4xl font-semibold tracking-tight">{s.name}</h1>
+                {s.city && <p className="mt-1.5 text-[13.5px] text-cream/60">{s.city}</p>}
+              </div>
             </div>
             <span
               className={
@@ -133,7 +152,16 @@ export default function StorePage({ params }: { params: Promise<{ slug: string }
                   key={p.id}
                   className="group flex items-stretch justify-between gap-3 rounded-xl border border-line bg-white p-4 shadow-card transition-all hover:-translate-y-0.5 hover:shadow-lift"
                 >
-                  <div className="min-w-0">
+                  {p.imageUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={p.imageUrl}
+                      alt={p.name}
+                      loading="lazy"
+                      className="h-20 w-20 shrink-0 self-center rounded-lg object-cover sm:h-[92px] sm:w-[92px]"
+                    />
+                  )}
+                  <div className="min-w-0 flex-1">
                     <p className="text-[14.5px] font-semibold leading-snug">{p.name}</p>
                     {p.description && (
                       <p className="mt-1 line-clamp-2 text-[12.5px] leading-relaxed text-ink-mute">
@@ -177,6 +205,7 @@ export default function StorePage({ params }: { params: Promise<{ slug: string }
               productId: optionsFor.id,
               name: optionsFor.name,
               unitPrice,
+              vatRate: optionsFor.vatRate,
               modifiers,
             });
             toast.success(`${optionsFor.name} no carrinho`);

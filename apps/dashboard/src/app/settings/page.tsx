@@ -2,9 +2,23 @@
 
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Store, Clock, ExternalLink, Printer, CreditCard, Sparkles } from 'lucide-react';
+import {
+  Store,
+  Clock,
+  ExternalLink,
+  Printer,
+  CreditCard,
+  Sparkles,
+  Image as ImageIcon,
+  Globe,
+  Copy,
+  Check,
+  Bike,
+  ShoppingBag,
+} from 'lucide-react';
 import { api } from '@/lib/api';
 import { AppShell } from '@/components/AppShell';
+import { ImageUploader } from '@/components/ImageUploader';
 import { PrinterConfig } from '@/components/PrinterConfig';
 import {
   useTenant,
@@ -97,8 +111,6 @@ export default function SettingsPage() {
         address: form.address,
         city: form.city,
         zipCode: form.zipCode,
-        acceptsDelivery: form.acceptsDelivery,
-        acceptsPickup: form.acceptsPickup,
         deliveryFee: parseFloat(form.deliveryFee.replace(',', '.')) || 0,
         minOrderValue: parseFloat(form.minOrderValue.replace(',', '.')) || 0,
         isOpen: form.isOpen,
@@ -179,8 +191,95 @@ export default function SettingsPage() {
         </button>
       </section>
 
+      {/* modos de serviço: entregas / levantamento */}
+      <section className="animate-fade-up mb-5 rounded-xl border border-line bg-white p-5 shadow-card">
+        <div className="mb-3.5 flex items-center gap-3">
+          <span className="text-ink-mute">
+            <Bike size={17} />
+          </span>
+          <div>
+            <h2 className="font-display text-[16px] font-semibold leading-tight">Modos de entrega</h2>
+            <p className="text-[12px] text-ink-mute">
+              Liga ou desliga cada modo. Se desligares as entregas, os clientes só podem levantar no
+              local.
+            </p>
+          </div>
+        </div>
+        <ServiceToggle
+          icon={<Bike size={15} />}
+          label="Entregas ao domicílio"
+          on={form.acceptsDelivery}
+          onToggle={async (next) => {
+            if (!next && !form.acceptsPickup)
+              return toast.error('Tens de manter pelo menos um modo ativo.');
+            setForm((f) => ({ ...f, acceptsDelivery: next }));
+            await updateTenant.mutateAsync({ acceptsDelivery: next });
+            toast.success(next ? 'Entregas ativadas' : 'Entregas desativadas');
+          }}
+        />
+        <ServiceToggle
+          icon={<ShoppingBag size={15} />}
+          label="Levantar no local"
+          on={form.acceptsPickup}
+          onToggle={async (next) => {
+            if (!next && !form.acceptsDelivery)
+              return toast.error('Tens de manter pelo menos um modo ativo.');
+            setForm((f) => ({ ...f, acceptsPickup: next }));
+            await updateTenant.mutateAsync({ acceptsPickup: next });
+            toast.success(next ? 'Levantamento ativado' : 'Levantamento desativado');
+          }}
+        />
+      </section>
+
       {/* subscrição */}
       {tenant.data && <BillingCard tenant={tenant.data} />}
+
+      {/* identidade visual — capa e logótipo da loja */}
+      <section className="animate-fade-up mb-5 rounded-xl border border-line bg-white p-5 shadow-card">
+        <div className="mb-4 flex items-center gap-3">
+          <span className="text-ink-mute">
+            <ImageIcon size={17} />
+          </span>
+          <div>
+            <h2 className="font-display text-[16px] font-semibold leading-tight">
+              Identidade da loja
+            </h2>
+            <p className="text-[12px] text-ink-mute">
+              A capa e o logótipo aparecem no topo da tua loja online.
+            </p>
+          </div>
+        </div>
+
+        <ImageUploader
+          variant="cover"
+          value={tenant.data?.coverUrl}
+          maxDim={1800}
+          onChange={async (url) => {
+            await updateTenant.mutateAsync({ coverUrl: url ?? '' });
+            toast.success(url ? 'Capa atualizada' : 'Capa removida');
+          }}
+        />
+
+        <div className="mt-4 flex items-center gap-4">
+          <ImageUploader
+            variant="square"
+            size="md"
+            value={tenant.data?.logoUrl}
+            maxDim={600}
+            onChange={async (url) => {
+              await updateTenant.mutateAsync({ logoUrl: url ?? '' });
+              toast.success(url ? 'Logótipo atualizado' : 'Logótipo removido');
+            }}
+          />
+          <div className="text-[12.5px] text-ink-mute">
+            <p className="font-medium text-ink-soft">Logótipo</p>
+            <p className="mt-0.5">Quadrado, aparece junto ao nome da loja.</p>
+          </div>
+        </div>
+      </section>
+
+      {/* widget de encomendas para o site do dono */}
+      {tenant.data && <WebsiteWidgetCard slug={tenant.data.slug} />}
 
       <div className="stagger grid gap-5 lg:grid-cols-2">
         {/* dados da loja */}
@@ -209,27 +308,6 @@ export default function SettingsPage() {
           <Field label="Morada">
             <input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} className={inputCls} />
           </Field>
-
-          <div className="flex gap-5">
-            <label className="flex items-center gap-2 text-[13px]">
-              <input
-                type="checkbox"
-                checked={form.acceptsDelivery}
-                onChange={(e) => setForm({ ...form, acceptsDelivery: e.target.checked })}
-                className="h-4 w-4 accent-brand"
-              />
-              Aceita entregas
-            </label>
-            <label className="flex items-center gap-2 text-[13px]">
-              <input
-                type="checkbox"
-                checked={form.acceptsPickup}
-                onChange={(e) => setForm({ ...form, acceptsPickup: e.target.checked })}
-                className="h-4 w-4 accent-brand"
-              />
-              Aceita take-away
-            </label>
-          </div>
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Taxa de entrega (€)">
@@ -444,6 +522,138 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     <div className="space-y-1">
       <label className="block text-[12.5px] font-medium text-ink-soft">{label}</label>
       {children}
+    </div>
+  );
+}
+
+/** Interruptor imediato de um modo de serviço (entregas / levantamento). */
+function ServiceToggle({
+  icon,
+  label,
+  on,
+  onToggle,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  on: boolean;
+  onToggle: (next: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between border-t border-line py-3">
+      <span className="flex items-center gap-2.5 text-[13.5px] font-medium">
+        <span className="text-ink-mute">{icon}</span>
+        {label}
+      </span>
+      <button
+        type="button"
+        onClick={() => onToggle(!on)}
+        aria-label={label}
+        className={
+          'relative h-7 w-12 shrink-0 rounded-full transition-colors ' +
+          (on ? 'bg-green-500' : 'bg-stone-300')
+        }
+      >
+        <span
+          className={
+            'absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-all ' +
+            (on ? 'left-6' : 'left-1')
+          }
+        />
+      </button>
+    </div>
+  );
+}
+
+/** Código do botão de encomendas para o dono colar no site dele (estilo GloriaFood). */
+function WebsiteWidgetCard({ slug }: { slug: string }) {
+  const base = process.env.NEXT_PUBLIC_STORE_URL ?? 'https://menooo.com';
+  const storeUrl = `${base}/${slug}`;
+  const floatSnippet = `<script src="${base}/embed.js" data-slug="${slug}" defer></script>`;
+  const ownSnippet = `<script src="${base}/embed.js" data-slug="${slug}" data-button="hidden" defer></script>\n<button data-menooo-order>Peça aqui</button>`;
+
+  return (
+    <section className="animate-fade-up mb-5 rounded-xl border border-line bg-white p-5 shadow-card">
+      <div className="mb-4 flex items-center gap-3">
+        <span className="text-ink-mute">
+          <Globe size={17} />
+        </span>
+        <div>
+          <h2 className="font-display text-[16px] font-semibold leading-tight">
+            Encomendas no teu site
+          </h2>
+          <p className="text-[12px] text-ink-mute">
+            Tens duas maneiras de ligar o teu site à loja — escolhe a que preferires. Em qualquer
+            uma, o pedido cai na tua receção.
+          </p>
+        </div>
+      </div>
+
+      {/* ---- A) link direto ---- */}
+      <p className="mb-2 text-[13px] font-semibold text-ink">A) Link direto — o mais simples</p>
+      <p className="mb-2 text-[12px] text-ink-mute">
+        Põe este endereço num botão ou link do teu site (ex.: “Peça já aqui”). Abre a loja em página
+        inteira e funciona em qualquer site, sem código.
+      </p>
+      <SnippetBlock title="" desc="" code={storeUrl} />
+
+      {/* ---- B) popup (widget) ---- */}
+      <p className="mb-2 mt-5 text-[13px] font-semibold text-ink">
+        B) Popup no site — sem sair da página
+      </p>
+      <p className="mb-3 text-[12px] text-ink-mute">
+        Abre a loja numa janela sobreposta (estilo GloriaFood). Cola o código no{' '}
+        <strong>“Código personalizado”</strong> do teu site (a parte do{' '}
+        <code className="rounded bg-cream px-1 py-0.5 text-[11px]">&lt;body&gt;</code>) — não num
+        bloco de texto.
+      </p>
+      <SnippetBlock
+        title="Botão flutuante (aparece sozinho no canto)"
+        desc=""
+        code={floatSnippet}
+      />
+      <SnippetBlock
+        title="O teu próprio botão (ex.: “Peça aqui”)"
+        desc="Esconde o botão flutuante e liga o teu botão: mete data-menooo-order em qualquer botão ou link."
+        code={ownSnippet}
+      />
+
+      <p className="mt-1 text-[11.5px] leading-relaxed text-ink-mute">
+        No botão flutuante podes mudar o texto e a cor com{' '}
+        <code className="rounded bg-cream px-1 py-0.5">data-label="…"</code> e{' '}
+        <code className="rounded bg-cream px-1 py-0.5">data-color="#E05A1E"</code>.
+      </p>
+    </section>
+  );
+}
+
+function SnippetBlock({ title, desc, code }: { title?: string; desc?: string; code: string }) {
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      toast.success('Copiado');
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error('Não foi possível copiar — seleciona e copia à mão.');
+    }
+  }
+  return (
+    <div className="mb-4">
+      {title && <p className="text-[13px] font-semibold text-ink">{title}</p>}
+      {desc && <p className="mb-2 text-[12px] text-ink-mute">{desc}</p>}
+      <div className="relative">
+        <pre className="overflow-x-auto whitespace-pre rounded-xl border border-line bg-espresso px-4 py-3.5 pr-24 text-[12px] leading-relaxed text-cream">
+          <code>{code}</code>
+        </pre>
+        <button
+          onClick={copy}
+          className="absolute right-2 top-2 flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-[12px] font-semibold text-white transition-colors hover:bg-brand-dark"
+        >
+          {copied ? <Check size={13} /> : <Copy size={13} />}
+          {copied ? 'Copiado' : 'Copiar'}
+        </button>
+      </div>
     </div>
   );
 }

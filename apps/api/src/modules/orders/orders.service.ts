@@ -41,9 +41,9 @@ export class OrdersService {
   async createPublicOrder(slug: string, dto: CreatePublicOrderDto) {
     const tenant = await this.prisma.tenant.findUnique({
       where: { slug },
-      include: { openingHours: true, deliveryZones: true },
+      include: { openingHours: true, deliveryZones: true, account: true },
     });
-    if (!tenant || tenant.status !== 'ACTIVE' || !isSubscriptionUsable(tenant)) {
+    if (!tenant || tenant.status !== 'ACTIVE' || !isSubscriptionUsable(tenant.account)) {
       throw new NotFoundException('Loja não encontrada.');
     }
     if (!computeOpenNow(tenant, tenant.openingHours)) {
@@ -83,6 +83,7 @@ export class OrdersService {
     // construir as linhas da encomenda com preços do servidor
     let subtotalCents = 0;
     const itemsData: Prisma.OrderItemCreateWithoutOrderInput[] = [];
+    const vatLines: { lineCents: number; vatRate: number }[] = [];
 
     for (const item of dto.items) {
       const product = productMap.get(item.productId);
@@ -109,6 +110,7 @@ export class OrdersService {
 
       const lineCents = unitCents * item.quantity;
       subtotalCents += lineCents;
+      vatLines.push({ lineCents, vatRate: product.vatRate });
 
       itemsData.push({
         productId: product.id,
@@ -116,6 +118,7 @@ export class OrdersService {
         quantity: item.quantity,
         unitPrice: fromCents(unitCents),
         total: fromCents(lineCents),
+        vatRate: product.vatRate,
         modifiers: chosenModifiers.length ? { create: chosenModifiers } : undefined,
       });
     }
@@ -142,6 +145,24 @@ export class OrdersService {
     const deliveryCents = delivery.feeCents;
     const totalCents = subtotalCents - discountCents + deliveryCents;
 
+    // IVA incluído nos preços. O desconto reparte-se proporcionalmente pelas linhas.
+    const netSubtotalCents = subtotalCents - discountCents;
+    let vatCents = 0;
+    for (const l of vatLines) {
+      const lineNet =
+        subtotalCents > 0 ? Math.round((l.lineCents * netSubtotalCents) / subtotalCents) : 0;
+      vatCents += Math.round((lineNet * l.vatRate) / (100 + l.vatRate));
+    }
+    vatCents += Math.round((deliveryCents * 23) / 123); // IVA da entrega (23%)
+
+    // dinheiro: "troco para" tem de cobrir o total (senão o restaurante não sabe o troco)
+    const isCash = dto.paymentMethod === PaymentMethod.CASH;
+    if (isCash && dto.changeFor != null && toCents(dto.changeFor) < totalCents) {
+      throw new BadRequestException(
+        `O valor para troco (${dto.changeFor.toFixed(2)} €) tem de ser igual ou superior ao total (${fromCents(totalCents).toFixed(2)} €).`,
+      );
+    }
+
     // criar a encomenda com número sequencial por tenant (transação)
     const order = await this.prisma.$transaction(async (tx) => {
       const last = await tx.order.findFirst({
@@ -167,16 +188,20 @@ export class OrdersService {
           customerName: dto.customerName,
           customerPhone: dto.customerPhone,
           customerEmail: dto.customerEmail,
+          marketingConsent: dto.marketingConsent ?? false,
           deliveryAddress: dto.deliveryAddress,
           deliveryCity: dto.deliveryCity,
           deliveryZipCode: dto.deliveryZipCode,
           notes: dto.notes,
+          scheduledFor: dto.scheduledFor ? new Date(dto.scheduledFor) : null,
           paymentMethod: dto.paymentMethod,
+          changeFor: isCash && dto.changeFor != null ? dto.changeFor : null,
           subtotal: fromCents(subtotalCents),
           deliveryFee: fromCents(deliveryCents),
           discount: fromCents(discountCents),
           couponCode,
           total: fromCents(totalCents),
+          vatTotal: fromCents(vatCents),
           items: { create: itemsData },
         },
         include: { items: { include: { modifiers: true } } },

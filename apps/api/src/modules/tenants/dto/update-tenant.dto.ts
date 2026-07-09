@@ -14,6 +14,15 @@ export class UpdateTenantDto {
   @IsNotEmpty()
   name?: string;
 
+  // Identidade visual — URL devolvido por POST /uploads (string vazia = remover).
+  @IsOptional()
+  @IsString()
+  logoUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  coverUrl?: string;
+
   @IsOptional()
   @IsString()
   phone?: string;

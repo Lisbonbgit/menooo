@@ -184,9 +184,9 @@ export class PromotionsService {
   async publicDeliveryQuote(slug: string, zip: string) {
     const tenant = await this.prisma.tenant.findUnique({
       where: { slug },
-      include: { deliveryZones: true },
+      include: { deliveryZones: true, account: true },
     });
-    if (!tenant || tenant.status !== 'ACTIVE' || !isSubscriptionUsable(tenant)) {
+    if (!tenant || tenant.status !== 'ACTIVE' || !isSubscriptionUsable(tenant.account)) {
       throw new NotFoundException('Loja não encontrada.');
     }
     try {
@@ -203,8 +203,11 @@ export class PromotionsService {
 
   /** Pré-valida um cupão e devolve o desconto estimado para um subtotal. */
   async publicValidateCoupon(slug: string, code: string, subtotal: number) {
-    const tenant = await this.prisma.tenant.findUnique({ where: { slug } });
-    if (!tenant || tenant.status !== 'ACTIVE' || !isSubscriptionUsable(tenant)) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { slug },
+      include: { account: true },
+    });
+    if (!tenant || tenant.status !== 'ACTIVE' || !isSubscriptionUsable(tenant.account)) {
       throw new NotFoundException('Loja não encontrada.');
     }
     const ev = await this.evaluateCoupon(tenant.id, code, toCents(subtotal));

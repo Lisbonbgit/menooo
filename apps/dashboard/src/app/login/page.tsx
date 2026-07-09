@@ -19,6 +19,11 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const { data } = await api.post('/auth/login', { email, password });
+      if (data.needsVerification) {
+        toast.info('Confirma o teu email para entrar.');
+        router.replace(`/verify?email=${encodeURIComponent(email)}`);
+        return;
+      }
       setAuth(data.accessToken, data.user);
       toast.success('Sessão iniciada');
       router.replace('/overview');

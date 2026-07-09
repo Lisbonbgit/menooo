@@ -5,6 +5,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Max,
   Min,
 } from 'class-validator';
 
@@ -24,6 +25,12 @@ export class CreateProductDto {
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   price!: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(99)
+  vatRate?: number; // taxa de IVA (%), default 23
 
   @IsOptional()
   @IsString()
@@ -54,6 +61,12 @@ export class UpdateProductDto {
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   price?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(99)
+  vatRate?: number;
 
   @IsOptional()
   @IsString()

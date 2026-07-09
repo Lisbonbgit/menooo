@@ -4,7 +4,7 @@ import * as argon2 from 'argon2';
 const prisma = new PrismaClient();
 
 async function main() {
-  // --- Super admin da plataforma ---
+  // --- Super admin da plataforma (sem conta) ---
   const adminEmail = 'admin@menooo.pt';
   const adminPass = await argon2.hash('admin1234');
   await prisma.user.upsert({
@@ -12,7 +12,7 @@ async function main() {
     update: {},
     create: {
       id: 'seed-super-admin',
-      tenantId: null,
+      accountId: null,
       name: 'Super Admin',
       email: adminEmail,
       passwordHash: adminPass,
@@ -20,29 +20,40 @@ async function main() {
     },
   });
 
-  // --- Restaurante demo (ativo) ---
-  const ownerPass = await argon2.hash('demo1234');
-  const tenant = await prisma.tenant.upsert({
-    where: { slug: 'pizzaria-demo' },
-    update: {},
-    create: {
-      slug: 'pizzaria-demo',
-      name: 'Pizzaria Demo',
-      status: TenantStatus.ACTIVE,
-      isOpen: true,
-      city: 'Lisboa',
-      deliveryFee: 2.5,
-      minOrderValue: 10,
-      users: {
-        create: {
-          name: 'Dono Demo',
-          email: 'dono@pizzaria-demo.pt',
-          passwordHash: ownerPass,
-          role: UserRole.OWNER,
+  // --- Conta demo + restaurante (ativo) + dono ---
+  let tenant = await prisma.tenant.findUnique({ where: { slug: 'pizzaria-demo' } });
+  if (!tenant) {
+    const ownerPass = await argon2.hash('demo1234');
+    const account = await prisma.account.create({
+      data: {
+        name: 'Pizzaria Demo',
+        // subscrição paga (só para o demo ficar visível em desenvolvimento)
+        paidUntil: new Date(Date.now() + 3650 * 86_400_000),
+        activatedAt: new Date(),
+        tenants: {
+          create: {
+            slug: 'pizzaria-demo',
+            name: 'Pizzaria Demo',
+            status: TenantStatus.ACTIVE,
+            isOpen: true,
+            city: 'Lisboa',
+            deliveryFee: 2.5,
+            minOrderValue: 10,
+          },
+        },
+        users: {
+          create: {
+            name: 'Dono Demo',
+            email: 'dono@pizzaria-demo.pt',
+            passwordHash: ownerPass,
+            role: UserRole.OWNER,
+          },
         },
       },
-    },
-  });
+      include: { tenants: true },
+    });
+    tenant = account.tenants[0];
+  }
 
   // --- Menu demo (idempotente: só cria se vazio) ---
   const catCount = await prisma.category.count({ where: { tenantId: tenant.id } });

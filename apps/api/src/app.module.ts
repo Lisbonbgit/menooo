@@ -13,6 +13,7 @@ import { PromotionsModule } from './modules/promotions/promotions.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { HealthModule } from './modules/health/health.module';
+import { UploadsModule } from './modules/uploads/uploads.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 
 @Module({
@@ -30,6 +31,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
     AdminModule,
     BillingModule,
     HealthModule,
+    UploadsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

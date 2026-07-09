@@ -101,6 +101,18 @@ export class MailService {
   // Emails do ciclo de vida
   // ==========================================================================
 
+  /** 0. Código de verificação de email (6 dígitos), no registo. */
+  async sendVerificationCode(to: string, name: string, code: string) {
+    await this.send(
+      to,
+      `O teu código Menooo: ${code}`,
+      this.h('Confirma o teu email') +
+        this.p(`Olá ${name}, usa este código para confirmares a tua conta Menooo:`) +
+        `<p style="margin:22px 0;text-align:center;"><span style="display:inline-block;background:#FAF6F0;border:1px solid #EBE1D3;border-radius:10px;padding:14px 26px;font-size:30px;font-weight:bold;letter-spacing:8px;color:#2B211A;font-family:Arial,Helvetica,sans-serif;">${code}</span></p>` +
+        this.p('O código é válido durante 20 minutos. Se não foste tu a criar a conta, ignora este email.'),
+    );
+  }
+
   /** 1. Boas-vindas, logo após o registo. */
   async sendWelcome(to: string, ownerName: string, restaurantName: string) {
     await this.send(

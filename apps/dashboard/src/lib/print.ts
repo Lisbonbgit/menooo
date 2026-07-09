@@ -7,6 +7,13 @@ import { usePrintStore } from './print-store';
 
 const eur = (v: string | number) => `${Number(v).toFixed(2)} €`;
 
+const PAYMENT_LABELS: Record<string, string> = {
+  CASH: 'Dinheiro',
+  CARD_ON_DELIVERY: 'Cartão na entrega',
+  MBWAY: 'MB WAY',
+  CARD_ONLINE: 'Cartão online',
+};
+
 /** Talão em HTML para o fallback de impressão do browser. */
 export function receiptHtml(order: Order, storeName: string): string {
   const rows = order.items
@@ -35,17 +42,32 @@ export function receiptHtml(order: Order, storeName: string): string {
     <div class="center">${order.type === 'DELIVERY' ? 'ENTREGA' : 'TAKE-AWAY'}</div>
     <div class="center"><strong>Encomenda #${order.number}</strong></div>
     <div class="center">${new Date(order.createdAt).toLocaleString('pt-PT')}</div>
+    ${order.scheduledFor ? `<div class="center"><strong>Agendado: ${new Date(order.scheduledFor).toLocaleString('pt-PT')}</strong></div>` : ''}
     <hr>
-    <div>${esc(order.customerName)}<br>${esc(order.customerPhone)}
-    ${order.type === 'DELIVERY' && order.deliveryAddress ? '<br>' + esc(order.deliveryAddress) : ''}</div>
+    <div>${esc(order.customerName)}<br>${esc(order.customerPhone)}${order.customerEmail ? '<br>' + esc(order.customerEmail) : ''}
+    ${
+      order.type === 'DELIVERY' && order.deliveryAddress
+        ? '<br>' +
+          esc(order.deliveryAddress) +
+          ([order.deliveryZipCode, order.deliveryCity].filter(Boolean).length
+            ? '<br>' + esc([order.deliveryZipCode, order.deliveryCity].filter(Boolean).join(' '))
+            : '')
+        : ''
+    }</div>
     <hr>
     <table>${rows}</table>
     <hr>
     <table>
       <tr><td>Subtotal</td><td class="r">${eur(order.subtotal)}</td></tr>
+      ${Number(order.discount) > 0 ? `<tr><td>Desconto${order.couponCode ? ` (${esc(order.couponCode)})` : ''}</td><td class="r">-${eur(order.discount)}</td></tr>` : ''}
       ${order.type === 'DELIVERY' && Number(order.deliveryFee) > 0 ? `<tr><td>Entrega</td><td class="r">${eur(order.deliveryFee)}</td></tr>` : ''}
       <tr class="total"><td>TOTAL</td><td class="r">${eur(order.total)}</td></tr>
+      ${Number(order.vatTotal) > 0 ? `<tr><td>IVA incluído</td><td class="r">${eur(order.vatTotal)}</td></tr>` : ''}
     </table>
+    <hr>
+    <div>Pagamento: ${esc(PAYMENT_LABELS[order.paymentMethod] ?? order.paymentMethod)}${
+      order.paymentMethod === 'CASH' && order.changeFor ? '<br>Troco para: ' + eur(order.changeFor) : ''
+    }</div>
     ${order.notes ? `<hr><div>Notas: ${esc(order.notes)}</div>` : ''}
     <hr><div class="center">Obrigado!</div>
   </body></html>`;

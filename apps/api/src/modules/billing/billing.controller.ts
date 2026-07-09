@@ -15,7 +15,7 @@ import { BillingService } from './billing.service';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
-import { TenantId } from '../../common/decorators/tenant-id.decorator';
+import { AccountId } from '../../common/decorators/account-id.decorator';
 
 @ApiTags('billing')
 @Controller('billing')
@@ -35,16 +35,16 @@ export class BillingController {
   @UseGuards(RolesGuard)
   @Roles(UserRole.OWNER)
   @Post('checkout')
-  checkout(@TenantId() tenantId: string) {
-    return this.billing.createCheckout(tenantId);
+  checkout(@AccountId() accountId: string) {
+    return this.billing.createCheckout(accountId);
   }
 
   @ApiBearerAuth()
   @UseGuards(RolesGuard)
   @Roles(UserRole.OWNER)
   @Post('portal')
-  portal(@TenantId() tenantId: string) {
-    return this.billing.createPortal(tenantId);
+  portal(@AccountId() accountId: string) {
+    return this.billing.createPortal(accountId);
   }
 
   /** Chamado pelo Stripe (assinado) — nunca pelo browser. */

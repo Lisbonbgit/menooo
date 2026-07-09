@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth-store';
+import { TenantSwitcher } from '@/components/TenantSwitcher';
 
 const NAV = [
   { href: '/overview', label: 'Visão geral', icon: LayoutDashboard },
@@ -26,6 +27,7 @@ const NAV = [
 ];
 
 interface TenantLite {
+  id: string;
   name: string;
   slug: string;
   isOpen: boolean;
@@ -110,31 +112,18 @@ export function AppShell({
         <nav className="flex flex-col gap-1">{navLinks}</nav>
 
         <div className="mt-auto border-t border-espresso-line pt-4">
-          <div className="flex items-center gap-3 px-2">
+          <div className="flex items-center gap-2 px-1">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-espresso-light text-xs font-semibold text-cream">
               {initials}
             </span>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-[13px] font-medium text-cream">
-                {tenant.data?.name ?? '…'}
-              </p>
-              <p className="flex items-center gap-1.5 text-[11px] text-cream/50">
-                <span
-                  className={clsx(
-                    'h-1.5 w-1.5 rounded-full',
-                    tenant.data?.isOpen ? 'bg-green-400 animate-pulse-dot' : 'bg-cream/30',
-                  )}
-                />
-                {tenant.data?.isOpen ? 'aberto' : 'em pausa'}
-              </p>
-            </div>
+            <TenantSwitcher activeId={tenant.data?.id} />
             <button
               onClick={() => {
                 logout();
                 router.replace('/login');
               }}
               title="Sair"
-              className="rounded-lg p-2 text-cream/50 transition-colors hover:bg-espresso-light hover:text-cream"
+              className="shrink-0 rounded-lg p-2 text-cream/50 transition-colors hover:bg-espresso-light hover:text-cream"
             >
               <LogOut size={16} />
             </button>
@@ -144,17 +133,18 @@ export function AppShell({
 
       {/* ---- barra superior (mobile) ---- */}
       <div className="fixed inset-x-0 top-0 z-30 flex flex-col gap-2 bg-espresso px-4 pb-2 pt-3 md:hidden">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <Flame size={16} className="text-brand" />
             <span className="font-display text-base font-semibold text-cream">Menooo</span>
           </div>
+          <TenantSwitcher activeId={tenant.data?.id} dropUp={false} />
           <button
             onClick={() => {
               logout();
               router.replace('/login');
             }}
-            className="rounded-lg p-1.5 text-cream/60"
+            className="shrink-0 rounded-lg p-1.5 text-cream/60"
             title="Sair"
           >
             <LogOut size={16} />

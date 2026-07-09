@@ -2,9 +2,12 @@ import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
+  IsBoolean,
+  IsDateString,
   IsEnum,
   IsInt,
   IsNotEmpty,
+  IsNumber,
   IsOptional,
   IsString,
   Min,
@@ -44,6 +47,10 @@ export class CreatePublicOrderDto {
   customerEmail?: string;
 
   @IsOptional()
+  @IsBoolean()
+  marketingConsent?: boolean;
+
+  @IsOptional()
   @IsString()
   deliveryAddress?: string;
 
@@ -59,6 +66,11 @@ export class CreatePublicOrderDto {
   @IsString()
   notes?: string;
 
+  // agendamento: ISO 8601 (null/ausente = para já)
+  @IsOptional()
+  @IsDateString()
+  scheduledFor?: string;
+
   @IsOptional()
   @IsString()
   couponCode?: string;
@@ -66,6 +78,12 @@ export class CreatePublicOrderDto {
   // Fase 2: só métodos "à porta". Pagamento online entra na Fase 5.
   @IsEnum(PaymentMethod)
   paymentMethod!: PaymentMethod;
+
+  // dinheiro: valor com que o cliente vai pagar (para o restaurante levar troco)
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  changeFor?: number;
 
   @IsArray()
   @ArrayMinSize(1)

@@ -45,6 +45,7 @@ export interface CreateProductInput {
   name: string;
   price: number;
   description?: string;
+  vatRate?: number;
 }
 
 export function useCreateProduct() {
@@ -61,6 +62,25 @@ export function useToggleProduct() {
   return useMutation({
     mutationFn: async ({ id, active }: { id: string; active: boolean }) =>
       (await api.patch<Product>(`/catalog/products/${id}`, { active })).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['products'] }),
+  });
+}
+
+export type UpdateProductInput = { id: string } & Partial<{
+  name: string;
+  price: number;
+  description: string;
+  categoryId: string;
+  imageUrl: string;
+  active: boolean;
+  vatRate: number;
+}>;
+
+export function useUpdateProduct() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ...data }: UpdateProductInput) =>
+      (await api.patch<Product>(`/catalog/products/${id}`, data)).data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['products'] }),
   });
 }

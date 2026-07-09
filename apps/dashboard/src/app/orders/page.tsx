@@ -17,6 +17,7 @@ import {
   PackageCheck,
   Send,
   Inbox,
+  Clock,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useLiveOrders, useUpdateOrderStatus } from '@/lib/orders-hooks';
@@ -52,6 +53,22 @@ const COLUMNS: {
 ];
 
 const FINISHED: OrderStatus[] = ['COMPLETED', 'REJECTED', 'CANCELLED'];
+
+const PAYMENT_LABELS: Record<string, string> = {
+  CASH: 'Dinheiro',
+  CARD_ON_DELIVERY: 'Cartão na entrega',
+  MBWAY: 'MB WAY',
+  CARD_ONLINE: 'Cartão online',
+};
+
+function scheduledLabel(iso: string) {
+  return new Date(iso).toLocaleString('pt-PT', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
 
 function elapsed(iso: string) {
   const min = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60_000));
@@ -271,9 +288,25 @@ function OrderCard({
       </div>
 
       <p className="text-[13.5px] font-medium">{order.customerName}</p>
-      <p className="text-[11.5px] text-ink-mute">{order.customerPhone}</p>
-      {order.deliveryAddress && (
-        <p className="mt-0.5 text-[11.5px] leading-snug text-ink-mute">{order.deliveryAddress}</p>
+      <p className="text-[11.5px] text-ink-mute">
+        {order.customerPhone}
+        {order.customerEmail ? ` · ${order.customerEmail}` : ''}
+      </p>
+      {order.type === 'DELIVERY' && order.deliveryAddress && (
+        <p className="mt-0.5 text-[11.5px] leading-snug text-ink-mute">
+          {order.deliveryAddress}
+          {(order.deliveryZipCode || order.deliveryCity) && (
+            <>
+              <br />
+              {[order.deliveryZipCode, order.deliveryCity].filter(Boolean).join(' ')}
+            </>
+          )}
+        </p>
+      )}
+      {order.scheduledFor && (
+        <p className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-800">
+          <Clock size={11} /> Agendado: {scheduledLabel(order.scheduledFor)}
+        </p>
       )}
 
       <ul className="my-3 space-y-1 border-y border-dashed border-line py-2.5 text-[12.5px]">
@@ -296,9 +329,21 @@ function OrderCard({
         </p>
       )}
 
+      <p className="mb-2 text-[11.5px] text-ink-soft">
+        {PAYMENT_LABELS[order.paymentMethod] ?? order.paymentMethod}
+        {order.paymentMethod === 'CASH' && order.changeFor && (
+          <span className="text-ink-mute"> · troco para {Number(order.changeFor).toFixed(2)} €</span>
+        )}
+      </p>
+
       <div className="flex items-center justify-between gap-2">
         <span className="font-display text-[15px] font-semibold">
           {Number(order.total).toFixed(2)} €
+          {Number(order.vatTotal) > 0 && (
+            <span className="ml-1.5 font-sans text-[10.5px] font-normal text-ink-mute">
+              IVA incl. {Number(order.vatTotal).toFixed(2)} €
+            </span>
+          )}
         </span>
         <div className="flex gap-1.5">
           {nextActions(order).map((a) => (

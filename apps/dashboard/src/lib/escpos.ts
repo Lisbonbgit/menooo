@@ -16,7 +16,7 @@ function asciiFold(s: string): string {
 
 const PAYMENT_LABELS: Record<string, string> = {
   CASH: 'Dinheiro',
-  CARD_ON_DELIVERY: 'Multibanco a porta',
+  CARD_ON_DELIVERY: 'Cartao na entrega',
   MBWAY: 'MB WAY',
   CARD_ONLINE: 'Cartao online',
 };
@@ -97,12 +97,18 @@ export function buildReceiptBytes(order: Order, opts: ReceiptOptions): Uint8Arra
 
   b.bold(true).size(0x01).line(`Encomenda #${order.number}`).size(0).bold(false);
   b.line(new Date(order.createdAt).toLocaleString('pt-PT'));
+  if (order.scheduledFor) {
+    b.bold(true).line(`AGENDADO P/ ${new Date(order.scheduledFor).toLocaleString('pt-PT')}`).bold(false);
+  }
   b.rule();
 
   b.line(order.customerName);
   b.line(order.customerPhone);
+  if (order.customerEmail) b.line(order.customerEmail);
   if (order.type === 'DELIVERY' && order.deliveryAddress) {
     b.line(order.deliveryAddress);
+    const loc = [order.deliveryZipCode, order.deliveryCity].filter(Boolean).join(' ');
+    if (loc) b.line(loc);
   }
   b.rule();
 
@@ -115,13 +121,22 @@ export function buildReceiptBytes(order: Order, opts: ReceiptOptions): Uint8Arra
   b.rule();
 
   b.lineLR('Subtotal', eur(order.subtotal));
+  if (Number(order.discount) > 0) {
+    b.lineLR(`Desconto${order.couponCode ? ` (${order.couponCode})` : ''}`, `-${eur(order.discount)}`);
+  }
   if (order.type === 'DELIVERY' && Number(order.deliveryFee) > 0) {
     b.lineLR('Entrega', eur(order.deliveryFee));
   }
   b.bold(true).size(0x01).lineLR('TOTAL', eur(order.total)).size(0).bold(false);
+  if (Number(order.vatTotal) > 0) {
+    b.lineLR('IVA incluido', eur(order.vatTotal));
+  }
   b.feed(1);
 
   b.line(`Pagamento: ${PAYMENT_LABELS[order.paymentMethod] ?? order.paymentMethod}`);
+  if (order.paymentMethod === 'CASH' && order.changeFor) {
+    b.line(`Troco para: ${eur(order.changeFor)}`);
+  }
   if (order.notes) {
     b.rule();
     b.line('Notas:');

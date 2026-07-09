@@ -51,8 +51,8 @@ export class AdminService {
         }),
       ]);
 
-    // de onde nos conhecem (respostas do registo)
-    const referrals = await this.prisma.tenant.groupBy({
+    // de onde nos conhecem (respostas do registo) — por conta
+    const referrals = await this.prisma.account.groupBy({
       by: ['referralSource'],
       _count: { _all: true },
     });
@@ -82,7 +82,11 @@ export class AdminService {
         orderBy: { createdAt: 'desc' },
         include: {
           _count: { select: { products: true } },
-          users: { where: { role: 'OWNER' }, select: { name: true, email: true }, take: 1 },
+          account: {
+            include: {
+              users: { where: { role: 'OWNER' }, select: { name: true, email: true }, take: 1 },
+            },
+          },
         },
       }),
       this.prisma.order.groupBy({
@@ -112,16 +116,16 @@ export class AdminService {
       status: t.status,
       plan: t.plan,
       city: t.city,
-      owner: t.users[0] ?? null,
+      owner: t.account.users[0] ?? null,
       products: t._count.products,
       orders: agg.get(t.id)?._count._all ?? 0,
       revenue: Number(agg.get(t.id)?._sum.total ?? 0),
       customers: customers.get(t.id) ?? 0,
       lastOrderAt: agg.get(t.id)?._max.createdAt ?? null,
       createdAt: t.createdAt,
-      activatedAt: t.activatedAt,
-      referralSource: t.referralSource,
-      subscription: computeSubscription(t),
+      activatedAt: t.account.activatedAt,
+      referralSource: t.account.referralSource,
+      subscription: computeSubscription(t.account),
     }));
   }
 
@@ -131,7 +135,11 @@ export class AdminService {
       where: { id },
       include: {
         _count: { select: { products: true, categories: true } },
-        users: { where: { role: 'OWNER' }, select: { name: true, email: true }, take: 1 },
+        account: {
+          include: {
+            users: { where: { role: 'OWNER' }, select: { name: true, email: true }, take: 1 },
+          },
+        },
       },
     });
     if (!tenant) throw new NotFoundException('Restaurante não encontrado.');
@@ -170,7 +178,7 @@ export class AdminService {
         select: { id: true, number: true, status: true, total: true, createdAt: true },
       }),
       this.prisma.subscriptionPayment.findMany({
-        where: { tenantId: id },
+        where: { accountId: tenant.accountId },
         orderBy: { createdAt: 'desc' },
       }),
     ]);
@@ -203,14 +211,14 @@ export class AdminService {
       city: tenant.city,
       phone: tenant.phone,
       email: tenant.email,
-      owner: tenant.users[0] ?? null,
+      owner: tenant.account.users[0] ?? null,
       products: tenant._count.products,
       categories: tenant._count.categories,
       createdAt: tenant.createdAt,
-      activatedAt: tenant.activatedAt,
-      referralSource: tenant.referralSource,
+      activatedAt: tenant.account.activatedAt,
+      referralSource: tenant.account.referralSource,
       isOpen: tenant.isOpen,
-      subscription: computeSubscription(tenant),
+      subscription: computeSubscription(tenant.account),
       payments: payments.map((p) => ({
         id: p.id,
         amount: Number(p.amount),
@@ -243,24 +251,27 @@ export class AdminService {
   async setTenantStatus(id: string, status: TenantStatus) {
     const tenant = await this.prisma.tenant.findUnique({
       where: { id },
-      include: { users: { where: { role: 'OWNER' }, select: { email: true }, take: 1 } },
+      include: {
+        account: {
+          include: { users: { where: { role: 'OWNER' }, select: { email: true }, take: 1 } },
+        },
+      },
     });
     if (!tenant) throw new NotFoundException('Restaurante não encontrado.');
 
-    const firstActivation = status === TenantStatus.ACTIVE && !tenant.activatedAt;
+    // 1ª ativação da CONTA arranca os 7 dias de teste (partilhados por todas as
+    // unidades). Ativar uma 2ª unidade de uma conta já ativa não reinicia o teste.
+    const firstActivation = status === TenantStatus.ACTIVE && !tenant.account.activatedAt;
     const trialEndsAt = new Date(Date.now() + TRIAL_DAYS * 86_400_000);
-    const updated = await this.prisma.tenant.update({
-      where: { id },
-      data: {
-        status,
-        // 1ª ativação: regista a data e arranca os 7 dias de teste
-        ...(firstActivation ? { activatedAt: new Date(), trialEndsAt } : {}),
-      },
-    });
 
-    // email "a tua loja está no ar" na primeira aprovação
+    const updated = await this.prisma.tenant.update({ where: { id }, data: { status } });
     if (firstActivation) {
-      const to = tenant.users[0]?.email ?? tenant.email;
+      await this.prisma.account.update({
+        where: { id: tenant.accountId },
+        data: { activatedAt: new Date(), trialEndsAt },
+      });
+      // email "a tua loja está no ar" na primeira aprovação da conta
+      const to = tenant.account.users[0]?.email ?? tenant.email;
       if (to) void this.mail.sendActivated(to, tenant.name, tenant.slug, trialEndsAt);
     }
     return updated;
@@ -274,37 +285,43 @@ export class AdminService {
   async recordPayment(id: string, dto: { amount: number; months: number; note?: string }) {
     const tenant = await this.prisma.tenant.findUnique({
       where: { id },
-      include: { users: { where: { role: 'OWNER' }, select: { email: true }, take: 1 } },
+      include: {
+        account: {
+          include: { users: { where: { role: 'OWNER' }, select: { email: true }, take: 1 } },
+        },
+      },
     });
     if (!tenant) throw new NotFoundException('Restaurante não encontrado.');
     if (dto.months < 1 || dto.months > 24) {
       throw new BadRequestException('Meses: entre 1 e 24.');
     }
 
+    // pagamento aplica-se à CONTA (cobre todas as unidades)
+    const account = tenant.account;
     const base = new Date(
       Math.max(
         Date.now(),
-        tenant.paidUntil?.getTime() ?? 0,
-        tenant.trialEndsAt?.getTime() ?? 0,
+        account.paidUntil?.getTime() ?? 0,
+        account.trialEndsAt?.getTime() ?? 0,
       ),
     );
     const paidUntil = new Date(base);
     paidUntil.setMonth(paidUntil.getMonth() + dto.months);
 
-    const [payment, updated] = await this.prisma.$transaction([
+    const [payment, updatedAccount] = await this.prisma.$transaction([
       this.prisma.subscriptionPayment.create({
-        data: { tenantId: id, amount: dto.amount, months: dto.months, note: dto.note },
+        data: { accountId: account.id, amount: dto.amount, months: dto.months, note: dto.note },
       }),
-      this.prisma.tenant.update({ where: { id }, data: { paidUntil } }),
+      this.prisma.account.update({ where: { id: account.id }, data: { paidUntil } }),
     ]);
 
-    const to = tenant.users[0]?.email ?? tenant.email;
+    const to = account.users[0]?.email ?? tenant.email;
     if (to) void this.mail.sendSubscriptionActive(to, tenant.name, paidUntil);
 
     return {
       payment: { ...payment, amount: Number(payment.amount) },
-      paidUntil: updated.paidUntil,
-      subscription: computeSubscription(updated),
+      paidUntil: updatedAccount.paidUntil,
+      subscription: computeSubscription(updatedAccount),
     };
   }
 }

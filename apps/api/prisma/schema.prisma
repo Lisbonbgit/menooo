@@ -80,23 +80,42 @@ enum CouponType {
 // Tenant (restaurante)
 // ----------------------------------------------------------------------------
 
-model Tenant {
-  id          String       @id @default(cuid())
-  slug        String       @unique // usado na loja pública: /loja/{slug}
-  name        String
-  status      TenantStatus @default(PENDING)
-  plan        PlanType     @default(FREE)
-  activatedAt DateTime? // primeira ativação pelo admin (para "ativo há X")
-  referralSource String? // "como nos conheceste?" respondido no registo
-
-  // subscrição: 7 dias de teste a partir da ativação; depois paga
-  trialEndsAt         DateTime? // fim do período de teste (ativação + 7 dias)
-  trialReminderSentAt DateTime? // aviso de fim de teste já enviado (evita repetir)
-  paidUntil           DateTime? // subscrição paga até esta data (estendida por pagamentos)
-
-  // Stripe Billing (cobrança mensal automática)
-  stripeCustomerId     String? @unique
+// Conta do dono — detém a subscrição, agrupa várias unidades (restaurantes).
+// "Uma subscrição cobre todas as unidades da conta."
+model Account {
+  id                   String    @id @default(cuid())
+  name                 String
+  referralSource       String? // "como nos conheceste?" respondido no registo
+  // subscrição PARTILHADA por todas as unidades da conta
+  activatedAt          DateTime? // 1ª ativação pelo admin (arranca os 7 dias de teste)
+  trialEndsAt          DateTime? // fim do período de teste
+  trialReminderSentAt  DateTime? // aviso de fim de teste já enviado (evita repetir)
+  paidUntil            DateTime? // subscrição paga até esta data (estendida por pagamentos)
+  stripeCustomerId     String?   @unique
   stripeSubscriptionId String?
+
+  users    User[]
+  tenants  Tenant[]
+  payments SubscriptionPayment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ----------------------------------------------------------------------------
+// Tenant (restaurante / unidade)
+// ----------------------------------------------------------------------------
+
+model Tenant {
+  id        String       @id @default(cuid())
+  accountId String // conta do dono (subscrição partilhada por várias unidades)
+  account   Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  slug      String       @unique // usado na loja pública: /loja/{slug}
+  name      String
+  logoUrl   String? // logótipo da loja (identidade na montra)
+  coverUrl  String? // foto de capa da loja (topo da montra)
+  status    TenantStatus @default(PENDING)
+  plan      PlanType     @default(FREE)
 
   // contacto / morada
   email   String?
@@ -114,33 +133,32 @@ model Tenant {
   minOrderValue   Decimal  @default(0) @db.Decimal(10, 2)
   isOpen          Boolean  @default(false) // toggle manual de aberto/fechado
 
-  users         User[]
   categories    Category[]
   products      Product[]
   orders        Order[]
   openingHours  OpeningHour[]
   deliveryZones DeliveryZone[]
   coupons       Coupon[]
-  payments      SubscriptionPayment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([status])
+  @@index([accountId])
 }
 
 // pagamento de subscrição registado pelo admin (a receita da plataforma)
 model SubscriptionPayment {
-  id       String  @id @default(cuid())
-  tenantId String
-  tenant   Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  amount   Decimal @db.Decimal(10, 2) // valor recebido (€)
-  months   Int     @default(1) // meses de subscrição adicionados
-  note     String? // ex.: "transferência", "MB WAY", nº de fatura
+  id        String  @id @default(cuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  amount    Decimal @db.Decimal(10, 2) // valor recebido (€)
+  months    Int     @default(1) // meses de subscrição adicionados
+  note      String? // ex.: "transferência", "MB WAY", nº de fatura
 
   createdAt DateTime @default(now())
 
-  @@index([tenantId])
+  @@index([accountId])
 }
 
 // zona de entrega: prefixo de código postal -> taxa + mínimo próprios
@@ -195,20 +213,26 @@ model OpeningHour {
 
 model User {
   id           String     @id @default(cuid())
-  tenantId     String? // null => SUPER_ADMIN (plataforma)
-  tenant       Tenant?    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  accountId    String? // null => SUPER_ADMIN (plataforma); senão dono/staff da conta
+  account      Account?   @relation(fields: [accountId], references: [id], onDelete: Cascade)
   email        String
   passwordHash String
   name         String
   role         UserRole   @default(OWNER)
   status       UserStatus @default(ACTIVE)
 
+  // verificação de email (código de 6 dígitos no registo)
+  emailVerifiedAt           DateTime? // null = por verificar
+  verificationCodeHash      String? // hash do código de 6 dígitos
+  verificationCodeExpiresAt DateTime?
+  verificationAttempts      Int       @default(0)
+
   refreshTokens RefreshToken[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, email]) // email único por tenant
+  @@unique([accountId, email]) // email único por conta
   @@index([email])
 }
 
@@ -253,6 +277,7 @@ model Product {
   name        String
   description String?
   price       Decimal  @db.Decimal(10, 2)
+  vatRate     Int      @default(23) // taxa de IVA (%) incluída no preço: 23/13/6/0
   imageUrl    String?
   active      Boolean  @default(true)
   sortOrder   Int      @default(0)
@@ -302,9 +327,10 @@ model Order {
   type     OrderType   @default(DELIVERY)
 
   // cliente (sem conta — checkout de convidado)
-  customerName  String
-  customerPhone String
-  customerEmail String?
+  customerName     String
+  customerPhone    String
+  customerEmail    String?
+  marketingConsent Boolean @default(false) // aceita receber comunicações de marketing
 
   // entrega
   deliveryAddress String?
@@ -312,16 +338,21 @@ model Order {
   deliveryZipCode String?
   notes           String?
 
+  // agendamento: null = "para já"; senão a hora escolhida pelo cliente
+  scheduledFor DateTime?
+
   // valores
   subtotal    Decimal @default(0) @db.Decimal(10, 2)
   deliveryFee Decimal @default(0) @db.Decimal(10, 2)
   discount    Decimal @default(0) @db.Decimal(10, 2)
   couponCode  String?
   total       Decimal @default(0) @db.Decimal(10, 2)
+  vatTotal    Decimal @default(0) @db.Decimal(10, 2) // IVA incluído no total
 
   // pagamento
   paymentMethod PaymentMethod @default(CASH)
   paymentStatus PaymentStatus @default(PENDING)
+  changeFor     Decimal?      @db.Decimal(10, 2) // dinheiro: troco para este valor
 
   items OrderItem[]
 
@@ -342,6 +373,7 @@ model OrderItem {
   quantity  Int     @default(1)
   unitPrice Decimal @db.Decimal(10, 2) // preço base + modifiers, por unidade
   total     Decimal @db.Decimal(10, 2)
+  vatRate   Int     @default(23) // taxa de IVA (%) do produto, no momento da encomenda
 
   modifiers OrderItemModifier[]
 

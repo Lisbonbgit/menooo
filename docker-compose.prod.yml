@@ -44,12 +44,19 @@ services:
       JWT_ACCESS_TTL: 15m
       JWT_REFRESH_TTL: 7d
       CORS_ORIGINS: ${CORS_ORIGINS}
+      # Gestor master (super-admin) — se definidos, a API garante este login no arranque
+      SUPER_ADMIN_EMAIL: ${SUPER_ADMIN_EMAIL:-}
+      SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD:-}
       # Stripe (cobrança automática) — vazios = modo manual
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
       STRIPE_PRICE_ID: ${STRIPE_PRICE_ID:-}
       DASHBOARD_URL: ${DASHBOARD_URL:-http://187.124.4.163:8081}
       STORE_URL: ${STORE_URL:-http://187.124.4.163:8080}
+      # Imagens carregadas (fotos de produtos, capa e logótipo) — guardadas no
+      # volume comanda-uploads e servidas em ${PUBLIC_API_URL}/uploads/…
+      UPLOADS_DIR: /app/uploads
+      PUBLIC_API_URL: ${PUBLIC_API_URL:-http://187.124.4.163:8083}
       # Email transacional (Resend por SMTP) — vazio SMTP_HOST = desativado
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
@@ -58,6 +65,8 @@ services:
       MAIL_FROM: ${MAIL_FROM:-Menooo <onboarding@resend.dev>}
     entrypoint: ['/app/apps/api/docker-entrypoint.sh']
     command: ['node', 'apps/api/dist/main.js']
+    volumes:
+      - comanda-uploads:/app/uploads
     ports:
       - '8083:3001'
 
@@ -96,3 +105,4 @@ services:
 
 volumes:
   comanda-db:
+  comanda-uploads:

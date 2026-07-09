@@ -55,6 +55,12 @@ export default function RegisterPage() {
         password,
         referralSource,
       });
+      if (data.needsVerification) {
+        toast.success('Enviámos um código de 6 dígitos para o teu email.');
+        router.replace(`/verify?email=${encodeURIComponent(email)}`);
+        return;
+      }
+      // fallback (caso a verificação esteja desligada)
       setAuth(data.accessToken, data.user);
       toast.success('Loja criada — bem-vindo ao Menooo');
       router.replace('/overview');

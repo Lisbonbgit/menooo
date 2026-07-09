@@ -76,6 +76,7 @@ export class CatalogService {
         name: dto.name,
         description: dto.description,
         price: dto.price,
+        vatRate: dto.vatRate ?? 23,
         imageUrl: dto.imageUrl,
         sortOrder: dto.sortOrder ?? 0,
       },
@@ -155,8 +156,11 @@ export class CatalogService {
   // ==========================================================================
 
   async getPublicMenu(slug: string) {
-    const tenant = await this.prisma.tenant.findUnique({ where: { slug } });
-    if (!tenant || tenant.status !== 'ACTIVE' || !isSubscriptionUsable(tenant)) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { slug },
+      include: { account: true },
+    });
+    if (!tenant || tenant.status !== 'ACTIVE' || !isSubscriptionUsable(tenant.account)) {
       throw new NotFoundException('Loja não encontrada.');
     }
     return this.prisma.category.findMany({

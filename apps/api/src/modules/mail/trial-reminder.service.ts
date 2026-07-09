@@ -26,32 +26,36 @@ export class TrialReminderService implements OnApplicationBootstrap {
     const now = new Date();
     const windowEnd = new Date(now.getTime() + REMIND_DAYS_BEFORE * 86_400_000);
 
-    const tenants = await this.prisma.tenant.findMany({
+    // aviso é por CONTA (a subscrição é partilhada) — só se tiver uma unidade ativa
+    const accounts = await this.prisma.account.findMany({
       where: {
-        status: 'ACTIVE',
         trialReminderSentAt: null,
         trialEndsAt: { gt: now, lte: windowEnd },
         // sem subscrição paga em dia (senão o aviso não faz sentido)
         OR: [{ paidUntil: null }, { paidUntil: { lt: now } }],
+        tenants: { some: { status: 'ACTIVE' } },
       },
+      include: { users: { where: { role: 'OWNER' }, take: 1, select: { email: true } } },
     });
 
-    for (const t of tenants) {
-      const to = t.email;
-      if (!to || !t.trialEndsAt) continue;
+    let sent = 0;
+    for (const a of accounts) {
+      const to = a.users[0]?.email;
+      if (!to || !a.trialEndsAt) continue;
       const daysLeft = Math.max(
         1,
-        Math.ceil((t.trialEndsAt.getTime() - now.getTime()) / 86_400_000),
+        Math.ceil((a.trialEndsAt.getTime() - now.getTime()) / 86_400_000),
       );
-      await this.mail.sendTrialEnding(to, t.name, daysLeft, t.trialEndsAt);
-      await this.prisma.tenant.update({
-        where: { id: t.id },
+      await this.mail.sendTrialEnding(to, a.name, daysLeft, a.trialEndsAt);
+      await this.prisma.account.update({
+        where: { id: a.id },
         data: { trialReminderSentAt: new Date() },
       });
+      sent++;
     }
 
-    if (tenants.length > 0) {
-      this.logger.log(`avisos de fim de teste enviados: ${tenants.length}`);
+    if (sent > 0) {
+      this.logger.log(`avisos de fim de teste enviados: ${sent}`);
     }
   }
 

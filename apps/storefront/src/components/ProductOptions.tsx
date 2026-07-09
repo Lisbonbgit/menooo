@@ -64,6 +64,14 @@ export function ProductOptions({
         onClick={(e) => e.stopPropagation()}
         className="animate-sheet-up max-h-[85vh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-paper p-6 shadow-bar sm:rounded-3xl"
       >
+        {product.imageUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={product.imageUrl}
+            alt={product.name}
+            className="mb-5 h-44 w-full rounded-2xl object-cover"
+          />
+        )}
         <div className="mb-5 flex items-start justify-between gap-3">
           <div>
             <h3 className="font-display text-[22px] font-semibold leading-tight">{product.name}</h3>

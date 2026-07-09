@@ -2,6 +2,8 @@ export interface Store {
   id: string;
   slug: string;
   name: string;
+  logoUrl: string | null;
+  coverUrl: string | null;
   city: string | null;
   currency: string;
   acceptsDelivery: boolean;
@@ -31,6 +33,7 @@ export interface Product {
   name: string;
   description: string | null;
   price: string;
+  vatRate: number;
   imageUrl: string | null;
   modifierGroups: ModifierGroup[];
 }

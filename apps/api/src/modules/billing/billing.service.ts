@@ -25,10 +25,10 @@ export class BillingService {
     this.stripe = key ? new Stripe(key) : null;
   }
 
-  /** Email do dono (OWNER) de um tenant, para notificações. */
-  private async ownerEmail(tenantId: string): Promise<string | null> {
+  /** Email do dono (OWNER) de uma conta, para notificações. */
+  private async ownerEmail(accountId: string): Promise<string | null> {
     const user = await this.prisma.user.findFirst({
-      where: { tenantId, role: 'OWNER' },
+      where: { accountId, role: 'OWNER' },
       select: { email: true },
     });
     return user?.email ?? null;
@@ -52,26 +52,26 @@ export class BillingService {
     return this.stripe;
   }
 
-  /** Cria a sessão de checkout do Stripe (subscrição mensal). Devolve o URL. */
-  async createCheckout(tenantId: string) {
+  /** Cria a sessão de checkout do Stripe (subscrição mensal da CONTA). Devolve o URL. */
+  async createCheckout(accountId: string) {
     const stripe = this.ensureEnabled();
-    const tenant = await this.prisma.tenant.findUnique({
-      where: { id: tenantId },
+    const account = await this.prisma.account.findUnique({
+      where: { id: accountId },
       include: { users: { where: { role: 'OWNER' }, take: 1 } },
     });
-    if (!tenant) throw new NotFoundException('Restaurante não encontrado.');
+    if (!account) throw new NotFoundException('Conta não encontrada.');
 
-    // cliente Stripe 1:1 com o tenant
-    let customerId = tenant.stripeCustomerId;
+    // cliente Stripe 1:1 com a conta do dono
+    let customerId = account.stripeCustomerId;
     if (!customerId) {
       const customer = await stripe.customers.create({
-        name: tenant.name,
-        email: tenant.users[0]?.email ?? tenant.email ?? undefined,
-        metadata: { tenantId: tenant.id, slug: tenant.slug },
+        name: account.name,
+        email: account.users[0]?.email ?? undefined,
+        metadata: { accountId: account.id },
       });
       customerId = customer.id;
-      await this.prisma.tenant.update({
-        where: { id: tenant.id },
+      await this.prisma.account.update({
+        where: { id: account.id },
         data: { stripeCustomerId: customerId },
       });
     }
@@ -80,8 +80,8 @@ export class BillingService {
       mode: 'subscription',
       customer: customerId,
       line_items: [{ price: process.env.STRIPE_PRICE_ID!, quantity: 1 }],
-      subscription_data: { metadata: { tenantId: tenant.id } },
-      metadata: { tenantId: tenant.id },
+      subscription_data: { metadata: { accountId: account.id } },
+      metadata: { accountId: account.id },
       success_url: `${DASHBOARD_URL()}/settings?billing=success`,
       cancel_url: `${DASHBOARD_URL()}/settings?billing=cancelled`,
       locale: 'pt',
@@ -91,15 +91,15 @@ export class BillingService {
   }
 
   /** Portal do Stripe para gerir cartão / cancelar a subscrição. */
-  async createPortal(tenantId: string) {
+  async createPortal(accountId: string) {
     const stripe = this.ensureEnabled();
-    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
-    if (!tenant) throw new NotFoundException('Restaurante não encontrado.');
-    if (!tenant.stripeCustomerId) {
+    const account = await this.prisma.account.findUnique({ where: { id: accountId } });
+    if (!account) throw new NotFoundException('Conta não encontrada.');
+    if (!account.stripeCustomerId) {
       throw new BadRequestException('Ainda não existe uma subscrição automática.');
     }
     const session = await stripe.billingPortal.sessions.create({
-      customer: tenant.stripeCustomerId,
+      customer: account.stripeCustomerId,
       return_url: `${DASHBOARD_URL()}/settings`,
     });
     return { url: session.url };
@@ -125,16 +125,16 @@ export class BillingService {
     switch (event.type) {
       case 'checkout.session.completed': {
         const s = event.data.object as Stripe.Checkout.Session;
-        const tenantId = s.metadata?.tenantId;
-        if (tenantId) {
-          await this.prisma.tenant.update({
-            where: { id: tenantId },
+        const accountId = s.metadata?.accountId;
+        if (accountId) {
+          await this.prisma.account.update({
+            where: { id: accountId },
             data: {
               stripeCustomerId: (s.customer as string) ?? undefined,
               stripeSubscriptionId: (s.subscription as string) ?? undefined,
             },
           });
-          this.logger.log(`checkout concluído: tenant ${tenantId}`);
+          this.logger.log(`checkout concluído: conta ${accountId}`);
         }
         break;
       }
@@ -147,16 +147,16 @@ export class BillingService {
 
       case 'customer.subscription.deleted': {
         const sub = event.data.object as Stripe.Subscription;
-        const tenant = await this.prisma.tenant.findFirst({
+        const account = await this.prisma.account.findFirst({
           where: { stripeSubscriptionId: sub.id },
         });
-        await this.prisma.tenant.updateMany({
+        await this.prisma.account.updateMany({
           where: { stripeSubscriptionId: sub.id },
           data: { stripeSubscriptionId: null },
         });
-        if (tenant) {
-          const to = await this.ownerEmail(tenant.id);
-          if (to) void this.mail.sendSubscriptionCancelled(to, tenant.name, tenant.paidUntil);
+        if (account) {
+          const to = await this.ownerEmail(account.id);
+          if (to) void this.mail.sendSubscriptionCancelled(to, account.name, account.paidUntil);
         }
         this.logger.log(`subscrição cancelada no Stripe: ${sub.id} (acesso mantém-se até paidUntil)`);
         break;
@@ -169,15 +169,15 @@ export class BillingService {
     return { received: true };
   }
 
-  /** Fatura paga → estende paidUntil até ao fim do período e regista a receita. */
+  /** Fatura paga → estende paidUntil da CONTA e regista a receita. */
   private async applyInvoice(inv: Stripe.Invoice) {
     const customerId = typeof inv.customer === 'string' ? inv.customer : inv.customer?.id;
     if (!customerId) return;
 
-    const tenant = await this.prisma.tenant.findUnique({
+    const account = await this.prisma.account.findUnique({
       where: { stripeCustomerId: customerId },
     });
-    if (!tenant) {
+    if (!account) {
       this.logger.warn(`invoice.paid para cliente Stripe desconhecido: ${customerId}`);
       return;
     }
@@ -185,7 +185,7 @@ export class BillingService {
     // idempotência: cada fatura só conta uma vez (webhooks podem repetir-se)
     const marker = `Stripe · ${inv.id}`;
     const existing = await this.prisma.subscriptionPayment.findFirst({
-      where: { tenantId: tenant.id, note: marker },
+      where: { accountId: account.id, note: marker },
     });
     if (existing) return;
 
@@ -199,31 +199,31 @@ export class BillingService {
       : new Date(Date.now() + 31 * 86_400_000);
 
     const paidUntil =
-      !tenant.paidUntil || paidUntilCandidate > tenant.paidUntil
+      !account.paidUntil || paidUntilCandidate > account.paidUntil
         ? paidUntilCandidate
-        : tenant.paidUntil;
+        : account.paidUntil;
 
     await this.prisma.$transaction([
       this.prisma.subscriptionPayment.create({
         data: {
-          tenantId: tenant.id,
+          accountId: account.id,
           amount: (inv.amount_paid ?? 0) / 100,
           months: 1,
           note: marker,
         },
       }),
-      this.prisma.tenant.update({ where: { id: tenant.id }, data: { paidUntil } }),
+      this.prisma.account.update({ where: { id: account.id }, data: { paidUntil } }),
     ]);
 
     // email de subscrição ativa (apenas na 1ª fatura, para não repetir na renovação)
-    const wasFirst = !tenant.paidUntil;
+    const wasFirst = !account.paidUntil;
     if (wasFirst) {
-      const to = await this.ownerEmail(tenant.id);
-      if (to) void this.mail.sendSubscriptionActive(to, tenant.name, paidUntil);
+      const to = await this.ownerEmail(account.id);
+      if (to) void this.mail.sendSubscriptionActive(to, account.name, paidUntil);
     }
 
     this.logger.log(
-      `fatura ${inv.id} aplicada: ${tenant.slug} pago até ${paidUntil.toISOString()}`,
+      `fatura ${inv.id} aplicada: conta ${account.id} paga até ${paidUntil.toISOString()}`,
     );
   }
 }

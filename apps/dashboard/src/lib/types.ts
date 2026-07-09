@@ -28,6 +28,7 @@ export interface Product {
   name: string;
   description: string | null;
   price: string;
+  vatRate: number;
   imageUrl: string | null;
   active: boolean;
   sortOrder: number;
@@ -66,12 +67,21 @@ export interface Order {
   type: 'DELIVERY' | 'PICKUP';
   customerName: string;
   customerPhone: string;
+  customerEmail: string | null;
+  marketingConsent: boolean;
   deliveryAddress: string | null;
+  deliveryCity: string | null;
+  deliveryZipCode: string | null;
   notes: string | null;
+  scheduledFor: string | null;
   subtotal: string;
   deliveryFee: string;
+  discount: string;
+  couponCode: string | null;
   total: string;
+  vatTotal: string;
   paymentMethod: string;
+  changeFor: string | null;
   createdAt: string;
   items: OrderItem[];
 }

@@ -15,6 +15,7 @@ export interface CartItem {
   name: string;
   unitPrice: number; // base + opções (apenas para mostrar; servidor recalcula)
   quantity: number;
+  vatRate: number; // taxa de IVA (%) do produto — para o resumo
   modifiers: CartModifier[];
 }
 

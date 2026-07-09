@@ -1,13 +1,15 @@
-import { Body, Controller, Get, Param, Patch, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Put, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import { TenantsService } from './tenants.service';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
+import { CreateTenantDto } from './dto/create-tenant.dto';
 import { SetOpeningHoursDto } from './dto/opening-hours.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
+import { AccountId } from '../../common/decorators/account-id.decorator';
 
 @ApiTags('tenants')
 @Controller()
@@ -29,6 +31,24 @@ export class TenantsController {
   @Get('tenants/me')
   getMine(@TenantId() tenantId: string) {
     return this.tenants.getMine(tenantId);
+  }
+
+  /** Unidades da conta do dono (para o seletor de loja). */
+  @ApiBearerAuth()
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.OWNER, UserRole.STAFF)
+  @Get('tenants/mine')
+  listMine(@AccountId() accountId: string) {
+    return this.tenants.listMine(accountId);
+  }
+
+  /** Cria uma nova unidade na conta (fica PENDING até o admin ativar). */
+  @ApiBearerAuth()
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.OWNER)
+  @Post('tenants')
+  create(@AccountId() accountId: string, @Body() dto: CreateTenantDto) {
+    return this.tenants.createTenant(accountId, dto);
   }
 
   @ApiBearerAuth()

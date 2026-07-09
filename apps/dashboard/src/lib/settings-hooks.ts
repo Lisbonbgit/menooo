@@ -14,6 +14,8 @@ export interface TenantSettings {
   id: string;
   name: string;
   slug: string;
+  logoUrl: string | null;
+  coverUrl: string | null;
   phone: string | null;
   address: string | null;
   city: string | null;
