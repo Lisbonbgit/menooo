@@ -4,6 +4,8 @@ export interface Store {
   name: string;
   logoUrl: string | null;
   coverUrl: string | null;
+  brandColor: string | null;
+  heroColor: string | null;
   city: string | null;
   currency: string;
   acceptsDelivery: boolean;

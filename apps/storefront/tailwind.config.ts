@@ -5,16 +5,18 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        // personalizáveis por loja via variáveis CSS (StoreTheme define-as);
+        // os valores por omissão são o tema Menooo
         brand: {
-          DEFAULT: '#E05A1E',
-          dark: '#C24812',
-          soft: '#FBE9DD',
-          ink: '#7A2E0E',
+          DEFAULT: 'rgb(var(--store-brand, 224 90 30) / <alpha-value>)',
+          dark: 'rgb(var(--store-brand-dark, 194 72 18) / <alpha-value>)',
+          soft: 'rgb(var(--store-brand-soft, 251 233 221) / <alpha-value>)',
+          ink: 'rgb(var(--store-brand-ink, 122 46 14) / <alpha-value>)',
         },
         paper: '#FAF6F0',
         espresso: {
-          DEFAULT: '#231A13',
-          light: '#31251B',
+          DEFAULT: 'rgb(var(--store-hero, 35 26 19) / <alpha-value>)',
+          light: 'rgb(var(--store-hero-light, 49 37 27) / <alpha-value>)',
         },
         ink: {
           DEFAULT: '#2B211A',

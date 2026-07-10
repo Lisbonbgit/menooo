@@ -4,6 +4,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Matches,
   Min,
 } from 'class-validator';
 
@@ -22,6 +23,15 @@ export class UpdateTenantDto {
   @IsOptional()
   @IsString()
   coverUrl?: string;
+
+  // Cores da montra (hex #rrggbb; string vazia = repor o tema Menooo)
+  @IsOptional()
+  @Matches(/^(#[0-9a-fA-F]{6})?$/, { message: 'cor inválida: usar formato #rrggbb' })
+  brandColor?: string;
+
+  @IsOptional()
+  @Matches(/^(#[0-9a-fA-F]{6})?$/, { message: 'cor inválida: usar formato #rrggbb' })
+  heroColor?: string;
 
   @IsOptional()
   @IsString()

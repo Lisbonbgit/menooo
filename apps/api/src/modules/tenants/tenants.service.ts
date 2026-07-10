@@ -1,5 +1,14 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+
+/** Luminância relativa (WCAG) de uma cor #rrggbb — 0 = preto, 1 = branco. */
+function relativeLuminance(hex: string): number {
+  const [r, g, b] = [1, 3, 5].map((i) => {
+    const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
 import { UpdateTenantDto } from './dto/update-tenant.dto';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { OpeningHourDto } from './dto/opening-hours.dto';
@@ -27,6 +36,8 @@ export class TenantsService {
       name: rest.name,
       logoUrl: rest.logoUrl,
       coverUrl: rest.coverUrl,
+      brandColor: rest.brandColor,
+      heroColor: rest.heroColor,
       city: rest.city,
       currency: rest.currency,
       acceptsDelivery: rest.acceptsDelivery,
@@ -87,7 +98,31 @@ export class TenantsService {
 
   async updateMine(tenantId: string, dto: UpdateTenantDto) {
     await this.ensure(tenantId);
-    return this.prisma.tenant.update({ where: { id: tenantId }, data: dto });
+    const data: Record<string, unknown> = { ...dto };
+
+    // cores da montra: normaliza, valida legibilidade; vazio repõe o tema
+    for (const field of ['brandColor', 'heroColor'] as const) {
+      if (dto[field] === undefined) continue;
+      const hex = dto[field]!.trim().toLowerCase();
+      if (!hex) {
+        data[field] = null;
+        continue;
+      }
+      const lum = relativeLuminance(hex);
+      if (field === 'brandColor' && lum > 0.65) {
+        throw new BadRequestException(
+          'A cor da marca é demasiado clara — o texto dos botões ficaria ilegível. Escolhe um tom mais escuro.',
+        );
+      }
+      if (field === 'heroColor' && lum > 0.45) {
+        throw new BadRequestException(
+          'A cor do topo é demasiado clara — o nome da loja ficaria ilegível. Escolhe um tom escuro.',
+        );
+      }
+      data[field] = hex;
+    }
+
+    return this.prisma.tenant.update({ where: { id: tenantId }, data });
   }
 
   async getMyHours(tenantId: string) {

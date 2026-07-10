@@ -7,6 +7,7 @@ import { useStore, useMenu } from '@/lib/store-hooks';
 import { useCartStore } from '@/lib/cart-store';
 import { ProductOptions } from '@/components/ProductOptions';
 import { CartBar } from '@/components/CartBar';
+import { StoreTheme } from '@/components/StoreTheme';
 import type { Product } from '@/lib/types';
 
 export default function StorePage({ params }: { params: Promise<{ slug: string }> }) {
@@ -55,6 +56,7 @@ export default function StorePage({ params }: { params: Promise<{ slug: string }
 
   return (
     <main className="pb-32">
+      <StoreTheme brandColor={s.brandColor} heroColor={s.heroColor} />
       {/* hero */}
       <header className="relative overflow-hidden bg-espresso px-4 pb-14 pt-10 text-cream">
         {s.coverUrl && (

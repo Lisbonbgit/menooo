@@ -112,8 +112,10 @@ model Tenant {
   account   Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
   slug      String       @unique // usado na loja pública: /loja/{slug}
   name      String
-  logoUrl   String? // logótipo da loja (identidade na montra)
-  coverUrl  String? // foto de capa da loja (topo da montra)
+  logoUrl    String? // logótipo da loja (identidade na montra)
+  coverUrl   String? // foto de capa da loja (topo da montra)
+  brandColor String? // cor da marca na montra (hex #rrggbb); null = laranja Menooo
+  heroColor  String? // cor do topo/cabeçalho da montra (hex); null = espresso
   status    TenantStatus @default(PENDING)
   plan      PlanType     @default(FREE)
 

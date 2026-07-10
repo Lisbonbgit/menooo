@@ -16,6 +16,8 @@ export interface TenantSettings {
   slug: string;
   logoUrl: string | null;
   coverUrl: string | null;
+  brandColor: string | null;
+  heroColor: string | null;
   phone: string | null;
   address: string | null;
   city: string | null;

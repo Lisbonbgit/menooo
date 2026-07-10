@@ -15,6 +15,7 @@ import {
   Check,
   Bike,
   ShoppingBag,
+  Palette,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { AppShell } from '@/components/AppShell';
@@ -276,6 +277,16 @@ export default function SettingsPage() {
             <p className="mt-0.5">Quadrado, aparece junto ao nome da loja.</p>
           </div>
         </div>
+
+        {tenant.data && (
+          <StoreColorsBlock
+            key={`${tenant.data.brandColor}|${tenant.data.heroColor}`}
+            tenant={tenant.data}
+            onSave={async (brandColor, heroColor) => {
+              await updateTenant.mutateAsync({ brandColor, heroColor });
+            }}
+          />
+        )}
       </section>
 
       {/* widget de encomendas para o site do dono */}
@@ -522,6 +533,118 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     <div className="space-y-1">
       <label className="block text-[12.5px] font-medium text-ink-soft">{label}</label>
       {children}
+    </div>
+  );
+}
+
+// tema Menooo por omissão (usado como valor inicial dos seletores)
+const DEFAULT_BRAND = '#e05a1e';
+const DEFAULT_HERO = '#231a13';
+
+/** Cores da montra: cor da marca (botões/preços) e cor do topo (cabeçalho). */
+function StoreColorsBlock({
+  tenant,
+  onSave,
+}: {
+  tenant: TenantSettings;
+  onSave: (brandColor: string, heroColor: string) => Promise<void>;
+}) {
+  const [brand, setBrand] = useState(tenant.brandColor ?? DEFAULT_BRAND);
+  const [hero, setHero] = useState(tenant.heroColor ?? DEFAULT_HERO);
+  const [saving, setSaving] = useState(false);
+  const isCustom = !!(tenant.brandColor || tenant.heroColor);
+  const dirty =
+    brand !== (tenant.brandColor ?? DEFAULT_BRAND) || hero !== (tenant.heroColor ?? DEFAULT_HERO);
+
+  async function save(brandColor: string, heroColor: string) {
+    setSaving(true);
+    try {
+      await onSave(brandColor, heroColor);
+      toast.success(brandColor || heroColor ? 'Cores da loja guardadas' : 'Tema Menooo reposto');
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message ?? 'Não foi possível guardar as cores.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="mt-5 border-t border-dashed border-line pt-4">
+      <div className="mb-3 flex items-center gap-2">
+        <Palette size={15} className="text-ink-mute" />
+        <p className="text-[13.5px] font-semibold">Cores da loja</p>
+      </div>
+      <p className="mb-3 text-[12px] text-ink-mute">
+        A tua loja online veste as cores da tua marca — botões e preços usam a cor da marca; o
+        topo usa a cor do cabeçalho (tem de ser escura para o texto se ler bem).
+      </p>
+
+      <div className="flex flex-wrap items-end gap-4">
+        <div>
+          <label className="mb-1 block text-[12px] font-medium text-ink-soft">Cor da marca</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="color"
+              value={brand}
+              onChange={(e) => setBrand(e.target.value)}
+              className="h-9 w-14 cursor-pointer rounded-lg border border-line bg-white p-1"
+            />
+            <span className="font-mono text-[12px] text-ink-mute">{brand}</span>
+          </div>
+        </div>
+
+        <div>
+          <label className="mb-1 block text-[12px] font-medium text-ink-soft">Cor do topo</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="color"
+              value={hero}
+              onChange={(e) => setHero(e.target.value)}
+              className="h-9 w-14 cursor-pointer rounded-lg border border-line bg-white p-1"
+            />
+            <span className="font-mono text-[12px] text-ink-mute">{hero}</span>
+          </div>
+        </div>
+
+        {/* pré-visualização rápida */}
+        <div
+          className="flex min-w-40 flex-1 items-center justify-between gap-2 rounded-xl px-3.5 py-2.5"
+          style={{ background: hero }}
+        >
+          <span className="text-[12.5px] font-semibold" style={{ color: '#F3EBDF' }}>
+            A tua loja
+          </span>
+          <span
+            className="rounded-full px-3 py-1 text-[11.5px] font-semibold text-white"
+            style={{ background: brand }}
+          >
+            Encomendar
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-3.5 flex gap-2">
+        <button
+          onClick={() => save(brand, hero)}
+          disabled={saving || !dirty}
+          className="rounded-xl bg-brand px-4 py-2 text-[12.5px] font-semibold text-white shadow-card transition-colors hover:bg-brand-dark disabled:opacity-50"
+        >
+          {saving ? 'A guardar…' : 'Guardar cores'}
+        </button>
+        {isCustom && (
+          <button
+            onClick={() => {
+              setBrand(DEFAULT_BRAND);
+              setHero(DEFAULT_HERO);
+              save('', '');
+            }}
+            disabled={saving}
+            className="rounded-xl border border-line bg-white px-4 py-2 text-[12.5px] font-medium text-ink-soft transition-colors hover:border-brand/40"
+          >
+            Repor tema Menooo
+          </button>
+        )}
+      </div>
     </div>
   );
 }

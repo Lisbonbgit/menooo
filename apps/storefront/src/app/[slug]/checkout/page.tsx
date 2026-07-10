@@ -21,6 +21,7 @@ import { api } from '@/lib/api';
 import { useStore } from '@/lib/store-hooks';
 import { useCartStore } from '@/lib/cart-store';
 import { AddressMap } from '@/components/AddressMap';
+import { StoreTheme } from '@/components/StoreTheme';
 
 type OrderType = 'DELIVERY' | 'PICKUP';
 type PaymentMethod = 'CASH' | 'CARD_ON_DELIVERY';
@@ -113,6 +114,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   if (placed) {
     return (
       <main className="flex min-h-screen items-center justify-center px-4">
+        {s && <StoreTheme brandColor={s.brandColor} heroColor={s.heroColor} />}
         <div className="animate-fade-up w-full max-w-sm rounded-3xl border border-line bg-white p-8 text-center shadow-lift">
           <span className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
             <CheckCircle2 className="text-green-600" size={34} />
@@ -223,6 +225,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
 
   return (
     <main className="mx-auto max-w-md px-4 pb-12 pt-6">
+      {s && <StoreTheme brandColor={s.brandColor} heroColor={s.heroColor} />}
       <Link
         href={`/${slug}`}
         className="mb-5 inline-flex items-center gap-1.5 text-[13px] font-medium text-ink-soft transition-colors hover:text-ink"
