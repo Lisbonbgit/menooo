@@ -1,4 +1,7 @@
 import { Flame, ArrowRight } from 'lucide-react';
+import { PrinterHero } from './_landing/PrinterHero';
+import { PhotoBand } from './_landing/PhotoBand';
+import { OrderFlow } from './_landing/OrderFlow';
 
 const DASHBOARD_URL = process.env.NEXT_PUBLIC_DASHBOARD_URL ?? 'http://187.124.4.163:8081';
 
@@ -34,15 +37,6 @@ const FEATURES = [
     d: 'Encomendas, receita, ticket médio e evolução de 7 dias, visíveis ao abrir o painel.',
   },
 ];
-
-const scallopTop = {
-  backgroundImage: 'radial-gradient(circle 6px at 10px -2px, transparent 6px, #FAF6F0 6.5px)',
-  backgroundSize: '20px 12px',
-};
-const scallopBottom = {
-  backgroundImage: 'radial-gradient(circle 6px at 10px 14px, transparent 6px, #FAF6F0 6.5px)',
-  backgroundSize: '20px 12px',
-};
 
 export default function HomePage() {
   return (
@@ -114,62 +108,8 @@ export default function HomePage() {
               </p>
             </div>
 
-            {/* talão de cozinha */}
-            <div className="relative mx-auto w-full max-w-[290px]">
-              <div
-                className="absolute -inset-10 opacity-20 blur-3xl"
-                style={{ background: 'radial-gradient(closest-side, #E05A1E, transparent)' }}
-              />
-              <div className="relative rotate-[1.5deg] drop-shadow-2xl">
-                <div className="h-3" style={scallopTop} />
-                <div className="bg-paper px-6 pb-6 pt-5 text-ink">
-                  <p className="text-center text-[10.5px] font-semibold uppercase tracking-[0.28em] text-ink-mute">
-                    Menooo · pedido
-                  </p>
-                  <p className="mt-1 text-center font-display text-[34px] font-semibold leading-none">
-                    #42
-                  </p>
-                  <p className="mt-1.5 text-center text-[11px] uppercase tracking-[0.14em] text-ink-mute">
-                    entrega · 20:41
-                  </p>
-                  <div className="my-4 border-t border-dashed border-ink/20" />
-                  <ul className="space-y-2 text-[13px] tabular-nums">
-                    <li className="flex justify-between">
-                      <span>
-                        <span className="font-semibold text-brand-dark">2×</span> Margherita
-                      </span>
-                      <span>23,00</span>
-                    </li>
-                    <li className="pl-5 text-[11.5px] text-ink-mute">grande · massa fina</li>
-                    <li className="flex justify-between">
-                      <span>
-                        <span className="font-semibold text-brand-dark">1×</span> Diavola
-                      </span>
-                      <span>11,50</span>
-                    </li>
-                    <li className="flex justify-between">
-                      <span>
-                        <span className="font-semibold text-brand-dark">2×</span> Água 0,5 L
-                      </span>
-                      <span>2,40</span>
-                    </li>
-                  </ul>
-                  <div className="my-4 border-t border-dashed border-ink/20" />
-                  <div className="flex items-baseline justify-between">
-                    <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-mute">
-                      Total
-                    </span>
-                    <span className="font-display text-[22px] font-semibold tabular-nums">
-                      39,40 €
-                    </span>
-                  </div>
-                  <p className="mt-4 text-center text-[10.5px] uppercase tracking-[0.2em] text-ink-mute">
-                    — obrigado —
-                  </p>
-                </div>
-                <div className="h-3" style={scallopBottom} />
-              </div>
-            </div>
+            {/* impressora térmica a imprimir o pedido */}
+            <PrinterHero />
           </div>
         </div>
 
@@ -192,6 +132,18 @@ export default function HomePage() {
           </div>
         </div>
       </header>
+
+      {/* ---------- ambiente: a cozinha ---------- */}
+      <PhotoBand
+        src="/landing/cozinha.jpg"
+        alt="Pizzaiolo a enfornar uma pizza no forno do restaurante"
+        kicker="Para quem está no balcão"
+        title="Feito para o balcão, não para o back-office."
+        sub="Menos ecrãs e menos passos: o Menooo vive ao lado da caixa e da cozinha, não numa central de suporte."
+      />
+
+      {/* ---------- da encomenda ao talão ---------- */}
+      <OrderFlow />
 
       {/* ---------- funcionalidades ---------- */}
       <section className="mx-auto max-w-5xl px-6 py-20">
@@ -217,6 +169,22 @@ export default function HomePage() {
           ))}
         </div>
       </section>
+
+      {/* ---------- ambiente: os talões ---------- */}
+      <PhotoBand
+        src="/landing/talao.jpg"
+        alt="Talões de pedidos pendurados na barra da cozinha de um restaurante"
+        kicker="Zero comissões"
+        title="Cada euro vendido é do restaurante."
+        sub="Mensalidade fixa de €29,90. Sem percentagens sobre as encomendas, sem surpresas no fim do mês."
+      >
+        <a
+          href={`${DASHBOARD_URL}/register`}
+          className="mt-7 inline-flex items-center gap-2.5 rounded-lg bg-brand px-6 py-3 text-[13.5px] font-semibold text-white transition-colors hover:bg-brand-dark"
+        >
+          Começar — 7 dias grátis <ArrowRight size={15} />
+        </a>
+      </PhotoBand>
 
       {/* ---------- como funciona ---------- */}
       <section className="border-y border-line bg-cream/40">

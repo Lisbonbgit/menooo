@@ -29,6 +29,90 @@ html {
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* ---------- landing: impressão térmica e pedidos ao vivo ---------- */
+
+/* o talão revela-se de cima para baixo, como papel a sair da ranhura;
+   steps() dá o avanço em linhas próprio de uma térmica */
+@keyframes printFeed {
+  from {
+    clip-path: inset(0 0 100% 0);
+    transform: translateY(-14px);
+  }
+  to {
+    clip-path: inset(0 0 -2% 0);
+    transform: translateY(0);
+  }
+}
+.print-anim {
+  animation: printFeed 2.6s steps(26, end) 0.5s both;
+}
+
+@keyframes ledBlink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.led-anim {
+  animation: ledBlink 1.6s ease-in-out infinite;
+}
+
+@keyframes riseIn {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes orderIn {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes ringPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgb(224 90 30 / 0.45);
+  }
+  70% {
+    box-shadow: 0 0 0 9px rgb(224 90 30 / 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgb(224 90 30 / 0);
+  }
+}
+
+/* visíveis por omissão; só animam quando o Reveal marca o contentor */
+.is-inview .reveal-rise {
+  animation: riseIn 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.is-inview .reveal-order {
+  animation: orderIn 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.is-inview .ring-pulse {
+  animation: ringPulse 1.8s cubic-bezier(0.22, 1, 0.36, 1) 1.2s infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .print-anim,
+  .led-anim,
+  .is-inview .reveal-rise,
+  .is-inview .reveal-order,
+  .is-inview .ring-pulse {
+    animation: none;
+  }
+}
+
 /* esconder scrollbar da fila de categorias mantendo o scroll */
 .no-scrollbar::-webkit-scrollbar {
   display: none;
