@@ -87,14 +87,34 @@ export class CatalogController {
     return this.catalog.deleteProduct(tenantId, id);
   }
 
-  // ----- Grupos de modificadores -----
-  @Post('products/:productId/modifier-groups')
-  createModifierGroup(
+  // ----- Grupos de modificadores (biblioteca) -----
+  @Get('modifier-groups')
+  listModifierGroups(@TenantId() tenantId: string) {
+    return this.catalog.listModifierGroups(tenantId);
+  }
+
+  @Post('modifier-groups')
+  createModifierGroup(@TenantId() tenantId: string, @Body() dto: CreateModifierGroupDto) {
+    return this.catalog.createModifierGroup(tenantId, dto);
+  }
+
+  // ----- Ligação grupo ↔ produto -----
+  @Post('products/:productId/modifier-groups/:groupId')
+  attachModifierGroup(
     @TenantId() tenantId: string,
     @Param('productId') productId: string,
-    @Body() dto: CreateModifierGroupDto,
+    @Param('groupId') groupId: string,
   ) {
-    return this.catalog.createModifierGroup(tenantId, productId, dto);
+    return this.catalog.attachModifierGroup(tenantId, productId, groupId);
+  }
+
+  @Delete('products/:productId/modifier-groups/:groupId')
+  detachModifierGroup(
+    @TenantId() tenantId: string,
+    @Param('productId') productId: string,
+    @Param('groupId') groupId: string,
+  ) {
+    return this.catalog.detachModifierGroup(tenantId, productId, groupId);
   }
 
   @Patch('modifier-groups/:id')

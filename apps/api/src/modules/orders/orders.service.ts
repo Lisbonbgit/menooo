@@ -76,7 +76,7 @@ export class OrdersService {
     const productIds = [...new Set(dto.items.map((i) => i.productId))];
     const products = await this.prisma.product.findMany({
       where: { id: { in: productIds }, tenantId: tenant.id, active: true },
-      include: { modifierGroups: { include: { modifiers: true } } },
+      include: { modifierGroupLinks: { include: { group: { include: { modifiers: true } } } } },
     });
     const productMap = new Map(products.map((p) => [p.id, p]));
 
@@ -93,7 +93,7 @@ export class OrdersService {
 
       // opções válidas para este produto
       const validModifiers = new Map(
-        product.modifierGroups.flatMap((g) => g.modifiers).map((m) => [m.id, m]),
+        product.modifierGroupLinks.flatMap((l) => l.group.modifiers).map((m) => [m.id, m]),
       );
 
       let unitCents = toCents(product.price);

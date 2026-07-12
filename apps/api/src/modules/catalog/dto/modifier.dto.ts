@@ -26,11 +26,6 @@ export class CreateModifierGroupDto {
   @IsInt()
   @Min(0)
   maxSelect?: number;
-
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  sortOrder?: number;
 }
 
 export class UpdateModifierGroupDto {
@@ -52,11 +47,6 @@ export class UpdateModifierGroupDto {
   @IsInt()
   @Min(0)
   maxSelect?: number;
-
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  sortOrder?: number;
 }
 
 export class CreateModifierDto {

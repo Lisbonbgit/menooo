@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { isSubscriptionUsable } from '../tenants/subscription.util';
 import { CreateCategoryDto, UpdateCategoryDto } from './dto/category.dto';
@@ -53,18 +53,31 @@ export class CatalogService {
     });
   }
 
+  /** include partilhado: grupos do produto via junção, já ordenados. */
+  private static readonly GROUP_LINKS_INCLUDE = {
+    modifierGroupLinks: {
+      orderBy: { sortOrder: 'asc' as const },
+      include: {
+        group: { include: { modifiers: { orderBy: { sortOrder: 'asc' as const } } } },
+      },
+    },
+  };
+
+  /** achata a junção para o formato público `modifierGroups` (storefront/checkout). */
+  private static flattenGroups<
+    T extends { modifierGroupLinks: { group: unknown }[] },
+  >(product: T) {
+    const { modifierGroupLinks, ...rest } = product;
+    return { ...rest, modifierGroups: modifierGroupLinks.map((l) => l.group) };
+  }
+
   async getProduct(tenantId: string, id: string) {
     const product = await this.prisma.product.findFirst({
       where: { id, tenantId },
-      include: {
-        modifierGroups: {
-          orderBy: { sortOrder: 'asc' },
-          include: { modifiers: { orderBy: { sortOrder: 'asc' } } },
-        },
-      },
+      include: CatalogService.GROUP_LINKS_INCLUDE,
     });
     if (!product) throw new NotFoundException('Produto não encontrado.');
-    return product;
+    return CatalogService.flattenGroups(product);
   }
 
   async createProduct(tenantId: string, dto: CreateProductDto) {
@@ -96,19 +109,29 @@ export class CatalogService {
   }
 
   // ==========================================================================
-  // Grupos de modificadores
+  // Grupos de modificadores (biblioteca do restaurante)
   // ==========================================================================
 
-  async createModifierGroup(tenantId: string, productId: string, dto: CreateModifierGroupDto) {
-    await this.ensureProduct(tenantId, productId);
+  async listModifierGroups(tenantId: string) {
+    const groups = await this.prisma.modifierGroup.findMany({
+      where: { tenantId },
+      orderBy: { name: 'asc' },
+      include: {
+        modifiers: { orderBy: { sortOrder: 'asc' } },
+        _count: { select: { productLinks: true } },
+      },
+    });
+    return groups.map(({ _count, ...g }) => ({ ...g, usedIn: _count.productLinks }));
+  }
+
+  createModifierGroup(tenantId: string, dto: CreateModifierGroupDto) {
     return this.prisma.modifierGroup.create({
       data: {
-        productId,
+        tenantId,
         name: dto.name,
         required: dto.required ?? false,
         minSelect: dto.minSelect ?? 0,
         maxSelect: dto.maxSelect ?? 1,
-        sortOrder: dto.sortOrder ?? 0,
       },
     });
   }
@@ -122,6 +145,36 @@ export class CatalogService {
     await this.ensureModifierGroup(tenantId, id);
     await this.prisma.modifierGroup.delete({ where: { id } });
     return { deleted: true };
+  }
+
+  /** anexa um grupo da biblioteca a um produto (no fim da lista). */
+  async attachModifierGroup(tenantId: string, productId: string, groupId: string) {
+    await this.ensureProduct(tenantId, productId);
+    await this.ensureModifierGroup(tenantId, groupId);
+    const last = await this.prisma.productModifierGroup.aggregate({
+      where: { productId },
+      _max: { sortOrder: true },
+    });
+    try {
+      return await this.prisma.productModifierGroup.create({
+        data: { productId, groupId, sortOrder: (last._max.sortOrder ?? -1) + 1 },
+      });
+    } catch (e) {
+      if ((e as { code?: string }).code === 'P2002') {
+        throw new ConflictException('Este grupo já está anexado ao produto.');
+      }
+      throw e;
+    }
+  }
+
+  /** desanexa sem apagar o grupo da biblioteca. */
+  async detachModifierGroup(tenantId: string, productId: string, groupId: string) {
+    await this.ensureProduct(tenantId, productId);
+    const { count } = await this.prisma.productModifierGroup.deleteMany({
+      where: { productId, groupId },
+    });
+    if (count === 0) throw new NotFoundException('Grupo não está anexado a este produto.');
+    return { detached: true };
   }
 
   // ==========================================================================
@@ -163,22 +216,21 @@ export class CatalogService {
     if (!tenant || tenant.status !== 'ACTIVE' || !isSubscriptionUsable(tenant.account)) {
       throw new NotFoundException('Loja não encontrada.');
     }
-    return this.prisma.category.findMany({
+    const categories = await this.prisma.category.findMany({
       where: { tenantId: tenant.id, active: true },
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
       include: {
         products: {
           where: { active: true },
           orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-          include: {
-            modifierGroups: {
-              orderBy: { sortOrder: 'asc' },
-              include: { modifiers: { orderBy: { sortOrder: 'asc' } } },
-            },
-          },
+          include: CatalogService.GROUP_LINKS_INCLUDE,
         },
       },
     });
+    return categories.map((cat) => ({
+      ...cat,
+      products: cat.products.map((p) => CatalogService.flattenGroups(p)),
+    }));
   }
 
   // ==========================================================================
@@ -199,7 +251,7 @@ export class CatalogService {
 
   private async ensureModifierGroup(tenantId: string, id: string) {
     const found = await this.prisma.modifierGroup.findFirst({
-      where: { id, product: { tenantId } },
+      where: { id, tenantId },
     });
     if (!found) throw new NotFoundException('Grupo de opções não encontrado.');
     return found;
@@ -207,7 +259,7 @@ export class CatalogService {
 
   private async ensureModifier(tenantId: string, id: string) {
     const found = await this.prisma.modifier.findFirst({
-      where: { id, group: { product: { tenantId } } },
+      where: { id, group: { tenantId } },
     });
     if (!found) throw new NotFoundException('Opção não encontrada.');
     return found;

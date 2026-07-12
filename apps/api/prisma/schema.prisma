@@ -135,12 +135,13 @@ model Tenant {
   minOrderValue   Decimal  @default(0) @db.Decimal(10, 2)
   isOpen          Boolean  @default(false) // toggle manual de aberto/fechado
 
-  categories    Category[]
-  products      Product[]
-  orders        Order[]
-  openingHours  OpeningHour[]
-  deliveryZones DeliveryZone[]
-  coupons       Coupon[]
+  categories     Category[]
+  products       Product[]
+  orders         Order[]
+  openingHours   OpeningHour[]
+  deliveryZones  DeliveryZone[]
+  coupons        Coupon[]
+  modifierGroups ModifierGroup[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -284,7 +285,7 @@ model Product {
   active      Boolean  @default(true)
   sortOrder   Int      @default(0)
 
-  modifierGroups ModifierGroup[]
+  modifierGroupLinks ProductModifierGroup[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -293,17 +294,35 @@ model Product {
   @@index([categoryId])
 }
 
-// grupo de opções (ex.: "Tamanho", "Extras")
+// grupo de opções reutilizável (ex.: "Tamanho", "Extras") — pertence ao
+// restaurante e anexa-se a produtos via ProductModifierGroup
 model ModifierGroup {
   id        String     @id @default(cuid())
-  productId String
-  product   Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  tenantId  String
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name      String
   required  Boolean    @default(false)
   minSelect Int        @default(0)
   maxSelect Int        @default(1)
-  sortOrder Int        @default(0)
   modifiers Modifier[]
+
+  productLinks ProductModifierGroup[]
+
+  @@index([tenantId])
+}
+
+// liga um grupo reutilizável a um produto (com ordem por produto)
+model ProductModifierGroup {
+  id        String        @id @default(cuid())
+  productId String
+  product   Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  groupId   String
+  group     ModifierGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  sortOrder Int           @default(0)
+
+  @@unique([productId, groupId])
+  @@index([productId])
+  @@index([groupId])
 }
 
 // opção individual (ex.: "Grande +1.50")
