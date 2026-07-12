@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from './api';
-import type { Category, Product } from './types';
+import type { Category, ModifierGroupWithUsage, Product } from './types';
 
 // ----- Categorias -----
 export function useCategories() {
@@ -102,35 +102,93 @@ export function useProductDetail(id: string, enabled = true) {
   });
 }
 
-export interface CreateGroupInput {
-  productId: string;
-  name: string;
-  required: boolean;
-  maxSelect: number;
+// biblioteca de grupos do restaurante (aba Personalizações)
+export function useModifierGroups() {
+  return useQuery({
+    queryKey: ['modifier-groups'],
+    queryFn: async () =>
+      (await api.get<ModifierGroupWithUsage[]>('/catalog/modifier-groups')).data,
+  });
 }
 
 export function useCreateModifierGroup() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ productId, name, required, maxSelect }: CreateGroupInput) =>
+    mutationFn: async ({
+      name,
+      required,
+      maxSelect,
+    }: {
+      name: string;
+      required: boolean;
+      maxSelect: number;
+    }) =>
       (
-        await api.post(`/catalog/products/${productId}/modifier-groups`, {
+        await api.post('/catalog/modifier-groups', {
           name,
           required,
           minSelect: required ? 1 : 0,
           maxSelect,
         })
       ).data,
-    onSuccess: (_d, vars) => qc.invalidateQueries({ queryKey: ['product', vars.productId] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['modifier-groups'] }),
+  });
+}
+
+export function useUpdateModifierGroup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      ...data
+    }: {
+      id: string;
+      name?: string;
+      required?: boolean;
+      minSelect?: number;
+      maxSelect?: number;
+    }) => (await api.patch(`/catalog/modifier-groups/${id}`, data)).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['modifier-groups'] });
+      qc.invalidateQueries({ queryKey: ['product'] });
+    },
   });
 }
 
 export function useDeleteModifierGroup() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id }: { id: string; productId: string }) =>
+    mutationFn: async ({ id }: { id: string }) =>
       (await api.delete(`/catalog/modifier-groups/${id}`)).data,
-    onSuccess: (_d, vars) => qc.invalidateQueries({ queryKey: ['product', vars.productId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['modifier-groups'] });
+      qc.invalidateQueries({ queryKey: ['product'] });
+    },
+  });
+}
+
+// ligação grupo ↔ produto (aba Vista geral)
+export function useAttachGroup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ productId, groupId }: { productId: string; groupId: string }) =>
+      (await api.post(`/catalog/products/${productId}/modifier-groups/${groupId}`)).data,
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ['product', vars.productId] });
+      qc.invalidateQueries({ queryKey: ['modifier-groups'] });
+    },
+  });
+}
+
+export function useDetachGroup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ productId, groupId }: { productId: string; groupId: string }) =>
+      (await api.delete(`/catalog/products/${productId}/modifier-groups/${groupId}`)).data,
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ['product', vars.productId] });
+      qc.invalidateQueries({ queryKey: ['modifier-groups'] });
+    },
   });
 }
 
@@ -143,19 +201,24 @@ export function useCreateModifier() {
       priceDelta,
     }: {
       groupId: string;
-      productId: string;
       name: string;
       priceDelta: number;
     }) => (await api.post(`/catalog/modifier-groups/${groupId}/modifiers`, { name, priceDelta })).data,
-    onSuccess: (_d, vars) => qc.invalidateQueries({ queryKey: ['product', vars.productId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['modifier-groups'] });
+      qc.invalidateQueries({ queryKey: ['product'] });
+    },
   });
 }
 
 export function useDeleteModifier() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id }: { id: string; productId: string }) =>
+    mutationFn: async ({ id }: { id: string }) =>
       (await api.delete(`/catalog/modifiers/${id}`)).data,
-    onSuccess: (_d, vars) => qc.invalidateQueries({ queryKey: ['product', vars.productId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['modifier-groups'] });
+      qc.invalidateQueries({ queryKey: ['product'] });
+    },
   });
 }
