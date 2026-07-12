@@ -207,6 +207,7 @@ export class BillingService {
       this.prisma.subscriptionPayment.create({
         data: {
           accountId: account.id,
+          accountName: account.name,
           amount: (inv.amount_paid ?? 0) / 100,
           months: 1,
           note: marker,

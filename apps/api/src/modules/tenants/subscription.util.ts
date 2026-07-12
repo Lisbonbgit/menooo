@@ -2,8 +2,11 @@ import { Account } from '@prisma/client';
 
 export type SubscriptionState = 'NONE' | 'TRIAL' | 'PAID' | 'EXPIRED';
 
-/** Objeto com a subscrição (a conta do dono, ou algo com os mesmos campos). */
-type WithSubscription = Pick<Account, 'trialEndsAt' | 'paidUntil'>;
+/** Objeto com a subscrição (a conta do dono, ou algo com os mesmos campos).
+ *  `status` é opcional para quem só tem as datas; quando presente, uma conta
+ *  banida nunca é utilizável. */
+type WithSubscription = Pick<Account, 'trialEndsAt' | 'paidUntil'> &
+  Partial<Pick<Account, 'status'>>;
 
 export interface SubscriptionInfo {
   state: SubscriptionState;
@@ -48,8 +51,9 @@ export function computeSubscription(account: WithSubscription): SubscriptionInfo
   return { state: 'NONE', trialEndsAt: null, paidUntil: null, daysLeft: null };
 }
 
-/** A conta pode ter lojas visíveis/a vender? (teste ativo ou subscrição paga) */
+/** A conta pode ter lojas visíveis/a vender? (não banida + teste ativo ou paga) */
 export function isSubscriptionUsable(account: WithSubscription): boolean {
+  if (account.status === 'BANNED') return false;
   const s = computeSubscription(account).state;
   return s === 'TRIAL' || s === 'PAID';
 }

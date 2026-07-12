@@ -1,10 +1,21 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import { AdminService } from './admin.service';
 import { MailService } from '../mail/mail.service';
 import { UpdateTenantStatusDto } from './dto/update-tenant-status.dto';
 import { RecordPaymentDto } from './dto/record-payment.dto';
+import { BanAccountDto } from './dto/ban-account.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 
@@ -55,5 +66,17 @@ export class AdminController {
   @Post('tenants/:id/payments')
   recordPayment(@Param('id') id: string, @Body() dto: RecordPaymentDto) {
     return this.admin.recordPayment(id, dto);
+  }
+
+  /** Bane (reversível) ou reativa a empresa inteira — todas as unidades. */
+  @Patch('accounts/:id/ban')
+  banAccount(@Param('id') id: string, @Body() dto: BanAccountDto) {
+    return this.admin.banAccount(id, dto.banned);
+  }
+
+  /** Exclusão definitiva da empresa (exige estar banida). Irreversível. */
+  @Delete('accounts/:id')
+  deleteAccount(@Param('id') id: string) {
+    return this.admin.deleteAccount(id);
   }
 }

@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { OrderStatus, TenantStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
@@ -126,6 +131,12 @@ export class AdminService {
       activatedAt: t.account.activatedAt,
       referralSource: t.account.referralSource,
       subscription: computeSubscription(t.account),
+      account: {
+        id: t.account.id,
+        name: t.account.name,
+        status: t.account.status,
+        bannedAt: t.account.bannedAt,
+      },
     }));
   }
 
@@ -219,6 +230,12 @@ export class AdminService {
       referralSource: tenant.account.referralSource,
       isOpen: tenant.isOpen,
       subscription: computeSubscription(tenant.account),
+      account: {
+        id: tenant.account.id,
+        name: tenant.account.name,
+        status: tenant.account.status,
+        bannedAt: tenant.account.bannedAt,
+      },
       payments: payments.map((p) => ({
         id: p.id,
         amount: Number(p.amount),
@@ -310,7 +327,13 @@ export class AdminService {
 
     const [payment, updatedAccount] = await this.prisma.$transaction([
       this.prisma.subscriptionPayment.create({
-        data: { accountId: account.id, amount: dto.amount, months: dto.months, note: dto.note },
+        data: {
+          accountId: account.id,
+          accountName: account.name,
+          amount: dto.amount,
+          months: dto.months,
+          note: dto.note,
+        },
       }),
       this.prisma.account.update({ where: { id: account.id }, data: { paidUntil } }),
     ]);
@@ -322,6 +345,52 @@ export class AdminService {
       payment: { ...payment, amount: Number(payment.amount) },
       paidUntil: updatedAccount.paidUntil,
       subscription: computeSubscription(updatedAccount),
+    };
+  }
+
+  /**
+   * Bane (reversível) ou reativa uma empresa inteira: lojas invisíveis ao
+   * público, login recusado e sessões cortadas. Os dados ficam intactos.
+   */
+  async banAccount(id: string, banned: boolean) {
+    const account = await this.prisma.account.findUnique({ where: { id } });
+    if (!account) throw new NotFoundException('Empresa não encontrada.');
+
+    const [updated] = await this.prisma.$transaction([
+      this.prisma.account.update({
+        where: { id },
+        data: { status: banned ? 'BANNED' : 'ACTIVE', bannedAt: banned ? new Date() : null },
+      }),
+      // corta as sessões de todos os utilizadores da conta (o access token
+      // residual expira sozinho em ≤15 min e nunca dá acesso à loja pública)
+      ...(banned
+        ? [this.prisma.refreshToken.deleteMany({ where: { user: { accountId: id } } })]
+        : []),
+    ]);
+    return { id: updated.id, name: updated.name, status: updated.status, bannedAt: updated.bannedAt };
+  }
+
+  /**
+   * Exclusão definitiva da empresa: exige que esteja banida primeiro.
+   * Apaga conta, utilizadores e lojas em cascata; os pagamentos de subscrição
+   * sobrevivem com accountId=null e o nome no snapshot (receita da plataforma).
+   */
+  async deleteAccount(id: string) {
+    const account = await this.prisma.account.findUnique({
+      where: { id },
+      include: { _count: { select: { tenants: true, users: true } } },
+    });
+    if (!account) throw new NotFoundException('Empresa não encontrada.');
+    if (account.status !== 'BANNED') {
+      throw new ConflictException('Banir a empresa primeiro.');
+    }
+
+    await this.prisma.account.delete({ where: { id } });
+    return {
+      deleted: true,
+      name: account.name,
+      tenants: account._count.tenants,
+      users: account._count.users,
     };
   }
 }

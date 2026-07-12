@@ -88,6 +88,17 @@ export class AuthService {
       return { needsVerification: true, email: user.email };
     }
 
+    // empresa banida pelo administrador da plataforma: sem acesso
+    if (user.accountId) {
+      const account = await this.prisma.account.findUnique({
+        where: { id: user.accountId },
+        select: { status: true },
+      });
+      if (account?.status === 'BANNED') {
+        throw new ForbiddenException('Conta banida. Contacta o suporte.');
+      }
+    }
+
     const activeTenantId = await this.defaultTenantId(user.accountId);
     const tokens = await this.issueTokens(user, activeTenantId);
     return { user: this.sanitizeUser(user), ...tokens };
