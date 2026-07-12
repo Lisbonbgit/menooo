@@ -25,6 +25,12 @@ enum TenantStatus {
   CLOSED
 }
 
+// estado da conta do dono (empresa): banida = login e lojas bloqueados
+enum AccountStatus {
+  ACTIVE
+  BANNED
+}
+
 enum PlanType {
   FREE
   PRO
@@ -83,8 +89,10 @@ enum CouponType {
 // Conta do dono — detém a subscrição, agrupa várias unidades (restaurantes).
 // "Uma subscrição cobre todas as unidades da conta."
 model Account {
-  id                   String    @id @default(cuid())
+  id                   String        @id @default(cuid())
   name                 String
+  status               AccountStatus @default(ACTIVE)
+  bannedAt             DateTime? // quando foi banida (null = nunca)
   referralSource       String? // "como nos conheceste?" respondido no registo
   // subscrição PARTILHADA por todas as unidades da conta
   activatedAt          DateTime? // 1ª ativação pelo admin (arranca os 7 dias de teste)
@@ -150,14 +158,16 @@ model Tenant {
   @@index([accountId])
 }
 
-// pagamento de subscrição registado pelo admin (a receita da plataforma)
+// pagamento de subscrição registado pelo admin (a receita da plataforma).
+// Sobrevive à exclusão da conta: accountId fica null e accountName guarda o nome.
 model SubscriptionPayment {
-  id        String  @id @default(cuid())
-  accountId String
-  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  amount    Decimal @db.Decimal(10, 2) // valor recebido (€)
-  months    Int     @default(1) // meses de subscrição adicionados
-  note      String? // ex.: "transferência", "MB WAY", nº de fatura
+  id          String   @id @default(cuid())
+  accountId   String?
+  account     Account? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  accountName String? // snapshot do nome da empresa no momento do pagamento
+  amount      Decimal  @db.Decimal(10, 2) // valor recebido (€)
+  months      Int      @default(1) // meses de subscrição adicionados
+  note        String? // ex.: "transferência", "MB WAY", nº de fatura
 
   createdAt DateTime @default(now())
 
