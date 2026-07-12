@@ -108,11 +108,16 @@ export default function MenuPage() {
         ))}
       </div>
 
-      {tab === 'personalizacoes' && <PersonalizacoesTab />}
+      {/* as duas abas ficam montadas (hidden) para não perder painéis
+          abertos e texto por guardar ao saltar para a biblioteca e voltar */}
+      <div className={tab === 'personalizacoes' ? undefined : 'hidden'}>
+        <PersonalizacoesTab />
+      </div>
 
-      {tab === 'geral' && categories.isLoading && <p className="text-ink-mute">A carregar…</p>}
+      <div className={tab === 'geral' ? undefined : 'hidden'}>
+      {categories.isLoading && <p className="text-ink-mute">A carregar…</p>}
 
-      {tab === 'geral' && categories.data?.length === 0 && (
+      {categories.data?.length === 0 && (
         <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-line py-16 text-center">
           <UtensilsCrossed size={30} className="text-ink-mute" strokeWidth={1.5} />
           <div>
@@ -125,7 +130,7 @@ export default function MenuPage() {
       )}
 
       <div className="stagger space-y-5">
-        {tab === 'geral' && categories.data?.map((cat) => (
+        {categories.data?.map((cat) => (
           <section
             key={cat.id}
             className="overflow-hidden rounded-xl border border-line bg-white shadow-card"
@@ -162,6 +167,7 @@ export default function MenuPage() {
             <AddProductForm categoryId={cat.id} />
           </section>
         ))}
+      </div>
       </div>
     </AppShell>
   );
@@ -374,8 +380,12 @@ function OptionsEditor({
                 onClick={async () => {
                   if (!confirm(`Desanexar "${g.name}" deste produto? O grupo fica na biblioteca.`))
                     return;
-                  await detach.mutateAsync({ productId, groupId: g.id });
-                  toast.success('Grupo desanexado');
+                  try {
+                    await detach.mutateAsync({ productId, groupId: g.id });
+                    toast.success('Grupo desanexado');
+                  } catch {
+                    toast.error('Erro ao desanexar o grupo');
+                  }
                 }}
                 className="rounded-lg p-1.5 text-ink-mute hover:bg-red-50 hover:text-red-600"
                 title="Desanexar deste produto (não apaga o grupo)"

@@ -1,4 +1,9 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { isSubscriptionUsable } from '../tenants/subscription.util';
 import { CreateCategoryDto, UpdateCategoryDto } from './dto/category.dto';
@@ -56,7 +61,8 @@ export class CatalogService {
   /** include partilhado: grupos do produto via junção, já ordenados. */
   private static readonly GROUP_LINKS_INCLUDE = {
     modifierGroupLinks: {
-      orderBy: { sortOrder: 'asc' as const },
+      // desempate por id: sortOrder pode empatar (anexações concorrentes)
+      orderBy: [{ sortOrder: 'asc' as const }, { id: 'asc' as const }],
       include: {
         group: { include: { modifiers: { orderBy: { sortOrder: 'asc' as const } } } },
       },
@@ -124,20 +130,35 @@ export class CatalogService {
     return groups.map(({ _count, ...g }) => ({ ...g, usedIn: _count.productLinks }));
   }
 
+  /** um grupo incoerente (min > max, max 0) bloquearia o carrinho em todos
+   *  os produtos anexados — validar sempre os valores efetivos. */
+  private assertGroupLimits(minSelect: number, maxSelect: number) {
+    if (maxSelect < 1) {
+      throw new BadRequestException('O máximo de escolhas tem de ser pelo menos 1.');
+    }
+    if (minSelect > maxSelect) {
+      throw new BadRequestException('O mínimo de escolhas não pode exceder o máximo.');
+    }
+  }
+
   createModifierGroup(tenantId: string, dto: CreateModifierGroupDto) {
+    const minSelect = dto.minSelect ?? 0;
+    const maxSelect = dto.maxSelect ?? 1;
+    this.assertGroupLimits(minSelect, maxSelect);
     return this.prisma.modifierGroup.create({
       data: {
         tenantId,
         name: dto.name,
         required: dto.required ?? false,
-        minSelect: dto.minSelect ?? 0,
-        maxSelect: dto.maxSelect ?? 1,
+        minSelect,
+        maxSelect,
       },
     });
   }
 
   async updateModifierGroup(tenantId: string, id: string, dto: UpdateModifierGroupDto) {
-    await this.ensureModifierGroup(tenantId, id);
+    const current = await this.ensureModifierGroup(tenantId, id);
+    this.assertGroupLimits(dto.minSelect ?? current.minSelect, dto.maxSelect ?? current.maxSelect);
     return this.prisma.modifierGroup.update({ where: { id }, data: dto });
   }
 

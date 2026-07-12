@@ -85,6 +85,18 @@ export function PersonalizacoesTab() {
 
       {groups.isLoading && <p className="text-ink-mute">A carregar…</p>}
 
+      {groups.isError && (
+        <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-5 py-4 text-[13px] text-red-700">
+          Não foi possível carregar os grupos de complementos.
+          <button
+            onClick={() => groups.refetch()}
+            className="font-semibold underline hover:no-underline"
+          >
+            Tentar novamente
+          </button>
+        </div>
+      )}
+
       {groups.data?.length === 0 && (
         <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-line py-16 text-center">
           <Layers size={30} className="text-ink-mute" strokeWidth={1.5} />
@@ -134,8 +146,12 @@ function GroupCard({ group }: { group: ModifierGroupWithUsage }) {
         ? `Apagar "${group.name}"? Está anexado a ${group.usedIn} produto(s) — as opções desaparecem desses produtos.`
         : `Apagar "${group.name}"?`;
     if (!confirm(aviso)) return;
-    await del.mutateAsync({ id: group.id });
-    toast.success('Grupo apagado');
+    try {
+      await del.mutateAsync({ id: group.id });
+      toast.success('Grupo apagado');
+    } catch {
+      toast.error('Erro ao apagar o grupo');
+    }
   }
 
   return (
@@ -170,7 +186,10 @@ function GroupCard({ group }: { group: ModifierGroupWithUsage }) {
             </span>
           ) : (
             <button
-              onClick={() => setEditName(true)}
+              onClick={() => {
+                setName(group.name);
+                setEditName(true);
+              }}
               className="group/nome flex items-center gap-1.5 text-[14px] font-semibold hover:text-brand-dark"
               title="Mudar o nome"
             >
@@ -184,11 +203,13 @@ function GroupCard({ group }: { group: ModifierGroupWithUsage }) {
 
           <button
             onClick={() =>
-              update.mutateAsync({
-                id: group.id,
-                required: !group.required,
-                minSelect: group.required ? 0 : 1,
-              })
+              update
+                .mutateAsync({
+                  id: group.id,
+                  required: !group.required,
+                  minSelect: group.required ? 0 : 1,
+                })
+                .catch(() => toast.error('Erro ao atualizar o grupo'))
             }
             title="Alternar entre obrigatório e opcional"
             className={
@@ -203,7 +224,11 @@ function GroupCard({ group }: { group: ModifierGroupWithUsage }) {
 
           <select
             value={group.maxSelect}
-            onChange={(e) => update.mutateAsync({ id: group.id, maxSelect: Number(e.target.value) })}
+            onChange={(e) =>
+              update
+                .mutateAsync({ id: group.id, maxSelect: Number(e.target.value) })
+                .catch(() => toast.error('Erro ao atualizar o máximo de escolhas'))
+            }
             title="Máximo de escolhas neste grupo"
             className="rounded-lg border border-line bg-white px-1.5 py-0.5 text-[11px] text-ink-soft outline-none focus:border-brand"
           >
@@ -248,7 +273,11 @@ function GroupCard({ group }: { group: ModifierGroupWithUsage }) {
               </span>
             )}
             <button
-              onClick={() => deleteModifier.mutateAsync({ id: m.id })}
+              onClick={() =>
+                deleteModifier
+                  .mutateAsync({ id: m.id })
+                  .catch(() => toast.error('Erro ao remover a opção'))
+              }
               className="rounded-full p-0.5 text-ink-mute hover:bg-red-100 hover:text-red-600"
               title="Remover opção"
             >
