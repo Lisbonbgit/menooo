@@ -14,7 +14,7 @@ if (!key) {
   process.exit(1);
 }
 
-const priceEur = parseFloat(process.argv[2] ?? '29.90');
+const priceEur = parseFloat(process.argv[2] ?? '9.90');
 const webhookUrl = process.argv[3] ?? 'http://187.124.4.163:8083/api/billing/webhook';
 
 const stripe = new Stripe(key);

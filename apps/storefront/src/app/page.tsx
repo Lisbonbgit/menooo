@@ -103,7 +103,7 @@ export default function HomePage() {
                 </a>
               </div>
               <p className="mt-6 text-[12px] text-cream/40">
-                Sem cartão de crédito para começar · €29,90/mês depois do teste · cancela quando
+                Sem cartão de crédito para começar · €9,90/mês depois do teste · cancela quando
                 quiseres
               </p>
             </div>
@@ -119,7 +119,7 @@ export default function HomePage() {
             {[
               ['0%', 'de comissões'],
               ['7 dias', 'de teste grátis'],
-              ['€29,90', 'por mês, fixo'],
+              ['€9,90', 'por mês, fixo'],
               ['minutos', 'até estar online'],
             ].map(([v, l]) => (
               <div key={l} className="py-6 text-center sm:px-4">
@@ -177,7 +177,7 @@ export default function HomePage() {
         alt="Talões de pedidos pendurados na barra da cozinha de um restaurante"
         kicker="Zero comissões"
         title="Cada euro vendido é do restaurante."
-        sub="Mensalidade fixa de €29,90. Sem percentagens sobre as encomendas, sem surpresas no fim do mês."
+        sub="Mensalidade fixa de €9,90. Sem percentagens sobre as encomendas, sem surpresas no fim do mês."
       >
         <a
           href={`${DASHBOARD_URL}/register`}
@@ -227,7 +227,7 @@ export default function HomePage() {
             Um plano, sem letras pequenas
           </p>
           <p className="mt-5 font-display text-[52px] font-semibold leading-none tracking-tight">
-            €29,90
+            €9,90
             <span className="font-sans text-[15px] font-medium text-ink-mute"> /mês</span>
           </p>
           <p className="mt-2 text-[13px] text-ink-mute">depois de 7 dias de teste gratuito</p>

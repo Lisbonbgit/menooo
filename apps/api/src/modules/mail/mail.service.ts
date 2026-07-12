@@ -156,7 +156,7 @@ export class MailService {
           `O período de teste da <strong>${restaurantName}</strong> termina a <strong>${fmtDate(trialEndsAt)}</strong>. Depois dessa data, a loja fica offline para os clientes até ativares a subscrição.`,
         ) +
         this.p(
-          `A subscrição custa <strong>€29,90/mês</strong>, sem comissões sobre as vendas e sem fidelização — ativa-se com cartão em menos de um minuto, diretamente no painel.`,
+          `A subscrição custa <strong>€9,90/mês</strong>, sem comissões sobre as vendas e sem fidelização — ativa-se com cartão em menos de um minuto, diretamente no painel.`,
         ) +
         this.cta('Ativar a subscrição', `${DASHBOARD_URL()}/settings`),
     );
