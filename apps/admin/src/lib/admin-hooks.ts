@@ -20,6 +20,14 @@ export interface Payment {
   createdAt: string;
 }
 
+/** Conta do dono (a "empresa") — a subscrição e o ban vivem aqui. */
+export interface AccountSummary {
+  id: string;
+  name: string;
+  status: 'ACTIVE' | 'BANNED';
+  bannedAt: string | null;
+}
+
 export interface AdminTenant {
   id: string;
   slug: string;
@@ -37,6 +45,7 @@ export interface AdminTenant {
   activatedAt: string | null;
   referralSource: string | null;
   subscription: Subscription;
+  account: AccountSummary;
 }
 
 export interface AdminStats {
@@ -70,6 +79,7 @@ export interface TenantDetail {
   referralSource: string | null;
   isOpen: boolean;
   subscription: Subscription;
+  account: AccountSummary;
   payments: Payment[];
   totalPaid: number;
   metrics: {
@@ -138,6 +148,33 @@ export function useSetTenantStatus() {
       qc.invalidateQueries({ queryKey: ['admin-tenants'] });
       qc.invalidateQueries({ queryKey: ['admin-stats'] });
       qc.invalidateQueries({ queryKey: ['admin-tenant', vars.id] });
+    },
+  });
+}
+
+/** Banir (reversível) ou reativar a empresa inteira. */
+export function useBanAccount() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ accountId, banned }: { accountId: string; banned: boolean }) =>
+      (await api.patch(`/admin/accounts/${accountId}/ban`, { banned })).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-tenants'] });
+      qc.invalidateQueries({ queryKey: ['admin-stats'] });
+      qc.invalidateQueries({ queryKey: ['admin-tenant'] });
+    },
+  });
+}
+
+/** Exclusão definitiva da empresa (o servidor exige que esteja banida). */
+export function useDeleteAccount() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ accountId }: { accountId: string }) =>
+      (await api.delete(`/admin/accounts/${accountId}`)).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-tenants'] });
+      qc.invalidateQueries({ queryKey: ['admin-stats'] });
     },
   });
 }

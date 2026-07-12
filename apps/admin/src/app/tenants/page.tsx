@@ -16,6 +16,10 @@ import {
   Sparkles,
   X,
   ExternalLink,
+  Ban,
+  ShieldCheck,
+  Trash2,
+  AlertTriangle,
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/auth-store';
 import {
@@ -24,9 +28,12 @@ import {
   useTenantDetail,
   useSetTenantStatus,
   useRecordPayment,
+  useBanAccount,
+  useDeleteAccount,
   type AdminTenant,
   type TenantStatus,
   type Subscription,
+  type AccountSummary,
 } from '@/lib/admin-hooks';
 
 const STORE_URL = process.env.NEXT_PUBLIC_STORE_URL ?? 'http://187.124.4.163:8080';
@@ -239,13 +246,20 @@ export default function TenantsPage() {
                       </p>
                     </td>
                     <td className="px-4 py-3.5">
-                      <span
-                        className={clsx(
-                          'rounded-full px-2.5 py-1 text-[11px] font-semibold',
-                          STATUS[t.status].cls,
+                      <span className="inline-flex flex-wrap items-center gap-1.5">
+                        <span
+                          className={clsx(
+                            'rounded-full px-2.5 py-1 text-[11px] font-semibold',
+                            STATUS[t.status].cls,
+                          )}
+                        >
+                          {STATUS[t.status].label}
+                        </span>
+                        {t.account.status === 'BANNED' && (
+                          <span className="rounded-full bg-red-600 px-2.5 py-1 text-[11px] font-semibold text-white">
+                            banida
+                          </span>
                         )}
-                      >
-                        {STATUS[t.status].label}
                       </span>
                     </td>
                     <td className="px-4 py-3.5">
@@ -406,6 +420,9 @@ function TenantDetailPanel({
 
             {/* subscrição (a receita da plataforma com este cliente) */}
             <SubscriptionCard d={d} />
+
+            {/* empresa (conta do dono): banir/reativar/excluir */}
+            <AccountCard account={d.account} onDeleted={onClose} />
 
             {/* KPIs */}
             <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -636,6 +653,163 @@ function SubscriptionCard({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Secção "Empresa": estado da conta do dono, banir/reativar e exclusão definitiva. */
+function AccountCard({ account, onDeleted }: { account: AccountSummary; onDeleted: () => void }) {
+  const ban = useBanAccount();
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const banned = account.status === 'BANNED';
+
+  async function toggleBan() {
+    const msg = banned
+      ? `Reativar a empresa "${account.name}"? O dono volta a entrar e as lojas voltam ao ar.`
+      : `Banir a empresa "${account.name}"?\n\nTodas as lojas desta conta ficam invisíveis ao público e o dono perde o acesso ao painel. Os dados ficam guardados — dá para reverter.`;
+    if (!confirm(msg)) return;
+    try {
+      await ban.mutateAsync({ accountId: account.id, banned: !banned });
+      toast.success(banned ? 'Empresa reativada' : 'Empresa banida');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? 'Erro ao atualizar a empresa');
+    }
+  }
+
+  return (
+    <div className="mb-5 rounded-xl border border-line bg-white p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <h4 className="text-[13.5px] font-semibold">Empresa</h4>
+          <span className="text-[12.5px] text-ink-soft">{account.name}</span>
+          {banned ? (
+            <span className="rounded-full bg-red-600 px-2.5 py-1 text-[11px] font-semibold text-white">
+              banida {account.bannedAt ? `· ${new Date(account.bannedAt).toLocaleDateString('pt-PT')}` : ''}
+            </span>
+          ) : (
+            <span className="rounded-full bg-green-100 px-2.5 py-1 text-[11px] font-semibold text-green-800">
+              ativa
+            </span>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={toggleBan}
+            disabled={ban.isPending}
+            className={clsx(
+              'flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-[12.5px] font-medium transition-colors disabled:opacity-60',
+              banned
+                ? 'bg-green-600 font-semibold text-white hover:bg-green-700'
+                : 'border border-line bg-white text-ink-soft hover:border-red-300 hover:bg-red-50 hover:text-red-700',
+            )}
+          >
+            {banned ? <ShieldCheck size={14} /> : <Ban size={14} />}
+            {banned ? 'Reativar empresa' : 'Banir empresa'}
+          </button>
+          {banned && (
+            <button
+              onClick={() => setConfirmDelete(true)}
+              className="flex items-center gap-1.5 rounded-xl bg-red-600 px-3.5 py-2 text-[12.5px] font-semibold text-white transition-colors hover:bg-red-700"
+            >
+              <Trash2 size={14} /> Excluir definitivamente
+            </button>
+          )}
+        </div>
+      </div>
+      <p className="mt-2 text-[11.5px] leading-relaxed text-ink-mute">
+        Banir bloqueia o login e esconde todas as lojas desta conta (reversível). Excluir apaga a
+        empresa, as lojas e as encomendas para sempre — só fica o histórico de pagamentos.
+      </p>
+
+      {confirmDelete && (
+        <DeleteAccountModal
+          account={account}
+          onClose={() => setConfirmDelete(false)}
+          onDeleted={onDeleted}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Confirmação de exclusão definitiva: obriga a escrever o nome da empresa. */
+function DeleteAccountModal({
+  account,
+  onClose,
+  onDeleted,
+}: {
+  account: AccountSummary;
+  onClose: () => void;
+  onDeleted: () => void;
+}) {
+  const del = useDeleteAccount();
+  const [typed, setTyped] = useState('');
+  const match = typed.trim() === account.name;
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!match) return;
+    try {
+      const r = await del.mutateAsync({ accountId: account.id });
+      toast.success(
+        `Empresa "${account.name}" excluída (${r.tenants} ${r.tenants === 1 ? 'loja' : 'lojas'})`,
+      );
+      onClose();
+      onDeleted();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? 'Erro ao excluir a empresa');
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-espresso/60 p-4 backdrop-blur-[2px]"
+      onClick={onClose}
+    >
+      <form
+        onSubmit={submit}
+        onClick={(e) => e.stopPropagation()}
+        className="animate-fade-up w-full max-w-md rounded-3xl bg-paper p-6 shadow-lift"
+      >
+        <div className="mb-3 flex items-center gap-2.5">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-100 text-red-600">
+            <AlertTriangle size={18} />
+          </span>
+          <h3 className="font-display text-[18px] font-semibold">Excluir definitivamente</h3>
+        </div>
+        <p className="text-[13px] leading-relaxed text-ink-soft">
+          Vais apagar a empresa <strong>{account.name}</strong>: todas as lojas, menús,
+          encomendas e utilizadores desaparecem. <strong>Não há volta atrás.</strong> Apenas o
+          histórico de pagamentos da plataforma é guardado.
+        </p>
+        <label className="mt-4 block text-[12px] font-medium text-ink-soft">
+          Escreve o nome da empresa para confirmar:
+        </label>
+        <input
+          autoFocus
+          value={typed}
+          onChange={(e) => setTyped(e.target.value)}
+          placeholder={account.name}
+          className="mt-1.5 w-full rounded-xl border border-line bg-white px-3 py-2.5 text-[13.5px] outline-none focus:border-red-400"
+        />
+        <div className="mt-4 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-line bg-white px-4 py-2 text-[12.5px] font-medium text-ink-soft hover:bg-cream"
+          >
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            disabled={!match || del.isPending}
+            className="flex items-center gap-1.5 rounded-xl bg-red-600 px-4 py-2 text-[12.5px] font-semibold text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Trash2 size={14} />
+            {del.isPending ? 'A excluir…' : 'Excluir para sempre'}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
