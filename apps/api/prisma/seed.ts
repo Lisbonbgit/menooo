@@ -72,17 +72,23 @@ async function main() {
         name: 'Margherita',
         description: 'Molho de tomate, mozzarella e manjericão',
         price: 8.5,
-        modifierGroups: {
+        // grupo reutilizável da biblioteca do tenant, anexado a este produto
+        modifierGroupLinks: {
           create: {
-            name: 'Tamanho',
-            required: true,
-            minSelect: 1,
-            maxSelect: 1,
-            modifiers: {
-              create: [
-                { name: 'Média', priceDelta: 0 },
-                { name: 'Grande', priceDelta: 3 },
-              ],
+            group: {
+              create: {
+                tenantId: tenant.id,
+                name: 'Tamanho',
+                required: true,
+                minSelect: 1,
+                maxSelect: 1,
+                modifiers: {
+                  create: [
+                    { name: 'Média', priceDelta: 0 },
+                    { name: 'Grande', priceDelta: 3 },
+                  ],
+                },
+              },
             },
           },
         },
