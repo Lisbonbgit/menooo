@@ -18,9 +18,11 @@ export interface ModifierGroup {
   required: boolean;
   minSelect: number;
   maxSelect: number;
-  sortOrder: number;
   modifiers: Modifier[];
 }
+
+/** grupo da biblioteca com a contagem de produtos onde está anexado */
+export type ModifierGroupWithUsage = ModifierGroup & { usedIn: number };
 
 export interface Product {
   id: string;

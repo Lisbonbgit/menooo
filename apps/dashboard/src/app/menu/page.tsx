@@ -26,12 +26,14 @@ import {
   useToggleProduct,
   useUpdateProduct,
   useProductDetail,
-  useCreateModifierGroup,
-  useDeleteModifierGroup,
-  useCreateModifier,
-  useDeleteModifier,
+  useModifierGroups,
+  useAttachGroup,
+  useDetachGroup,
 } from '@/lib/catalog-hooks';
 import type { Product } from '@/lib/types';
+import { PersonalizacoesTab } from './PersonalizacoesTab';
+
+type MenuTab = 'geral' | 'personalizacoes';
 
 // taxas de IVA em Portugal (23 normal, 13 intermédia, 6 reduzida, 0 isento)
 const VAT_RATES = [23, 13, 6, 0];
@@ -42,6 +44,7 @@ export default function MenuPage() {
   const createCategory = useCreateCategory();
   const deleteCategory = useDeleteCategory();
 
+  const [tab, setTab] = useState<MenuTab>('geral');
   const [newCategory, setNewCategory] = useState('');
 
   async function addCategory(e: React.FormEvent) {
@@ -66,22 +69,52 @@ export default function MenuPage() {
     <AppShell
       title="Menu"
       actions={
-        <form onSubmit={addCategory} className="flex gap-2">
-          <input
-            value={newCategory}
-            onChange={(e) => setNewCategory(e.target.value)}
-            placeholder="Nova categoria (ex.: Pizzas)"
-            className="w-52 rounded-xl border border-line bg-white px-3.5 py-2 text-[13.5px] shadow-card outline-none focus:border-brand"
-          />
-          <button
-            type="submit"
-            className="flex items-center gap-1.5 rounded-xl bg-brand px-4 py-2 text-[13.5px] font-semibold text-white shadow-card transition-colors hover:bg-brand-dark"
-          >
-            <Plus size={16} /> Categoria
-          </button>
-        </form>
+        tab === 'geral' ? (
+          <form onSubmit={addCategory} className="flex gap-2">
+            <input
+              value={newCategory}
+              onChange={(e) => setNewCategory(e.target.value)}
+              placeholder="Nova categoria (ex.: Pizzas)"
+              className="w-52 rounded-xl border border-line bg-white px-3.5 py-2 text-[13.5px] shadow-card outline-none focus:border-brand"
+            />
+            <button
+              type="submit"
+              className="flex items-center gap-1.5 rounded-xl bg-brand px-4 py-2 text-[13.5px] font-semibold text-white shadow-card transition-colors hover:bg-brand-dark"
+            >
+              <Plus size={16} /> Categoria
+            </button>
+          </form>
+        ) : undefined
       }
     >
+      {/* abas: produtos vs biblioteca de complementos */}
+      <div className="mb-5 flex w-fit gap-1 rounded-xl border border-line bg-white p-1 shadow-card">
+        {(
+          [
+            ['geral', 'Vista geral'],
+            ['personalizacoes', 'Personalizações'],
+          ] as [MenuTab, string][]
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            onClick={() => setTab(id)}
+            className={
+              'rounded-lg px-4 py-1.5 text-[13px] font-semibold transition-colors ' +
+              (tab === id ? 'bg-brand text-white' : 'text-ink-soft hover:bg-cream')
+            }
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* as duas abas ficam montadas (hidden) para não perder painéis
+          abertos e texto por guardar ao saltar para a biblioteca e voltar */}
+      <div className={tab === 'personalizacoes' ? undefined : 'hidden'}>
+        <PersonalizacoesTab />
+      </div>
+
+      <div className={tab === 'geral' ? undefined : 'hidden'}>
       {categories.isLoading && <p className="text-ink-mute">A carregar…</p>}
 
       {categories.data?.length === 0 && (
@@ -124,7 +157,7 @@ export default function MenuPage() {
 
             <ul className="divide-y divide-line">
               {productsByCategory(cat.id).map((p) => (
-                <ProductRow key={p.id} product={p} />
+                <ProductRow key={p.id} product={p} onGoToLibrary={() => setTab('personalizacoes')} />
               ))}
               {productsByCategory(cat.id).length === 0 && (
                 <li className="px-5 py-3 text-[13px] text-ink-mute">Sem produtos nesta categoria.</li>
@@ -135,11 +168,12 @@ export default function MenuPage() {
           </section>
         ))}
       </div>
+      </div>
     </AppShell>
   );
 }
 
-function ProductRow({ product }: { product: Product }) {
+function ProductRow({ product, onGoToLibrary }: { product: Product; onGoToLibrary: () => void }) {
   const toggle = useToggleProduct();
   const del = useDeleteProduct();
   const update = useUpdateProduct();
@@ -273,36 +307,38 @@ function ProductRow({ product }: { product: Product }) {
           </button>
         </div>
       </div>
-      {open && <OptionsEditor productId={product.id} />}
+      {open && <OptionsEditor productId={product.id} onGoToLibrary={onGoToLibrary} />}
     </li>
   );
 }
 
-/** Subgrupos de opções do produto (ex.: Tamanho, Extras) com preços. */
-function OptionsEditor({ productId }: { productId: string }) {
+/** Grupos de complementos anexados ao produto. Editar opções/preços é na
+ *  aba Personalizações; aqui só se anexa e desanexa. */
+function OptionsEditor({
+  productId,
+  onGoToLibrary,
+}: {
+  productId: string;
+  onGoToLibrary: () => void;
+}) {
   const detail = useProductDetail(productId);
-  const createGroup = useCreateModifierGroup();
-  const deleteGroup = useDeleteModifierGroup();
-  const createModifier = useCreateModifier();
-  const deleteModifier = useDeleteModifier();
+  const library = useModifierGroups();
+  const attach = useAttachGroup();
+  const detach = useDetachGroup();
+  const [selected, setSelected] = useState('');
 
-  const [groupName, setGroupName] = useState('');
-  const [required, setRequired] = useState(false);
-  const [maxSelect, setMaxSelect] = useState(1);
+  const attached = detail.data?.modifierGroups ?? [];
+  const attachedIds = new Set(attached.map((g) => g.id));
+  const available = (library.data ?? []).filter((g) => !attachedIds.has(g.id));
 
-  const groups = detail.data?.modifierGroups ?? [];
-
-  async function addGroup(e: React.FormEvent) {
-    e.preventDefault();
-    if (!groupName.trim()) return toast.error('Dá um nome ao grupo (ex.: Tamanho).');
+  async function attachSelected() {
+    if (!selected) return;
     try {
-      await createGroup.mutateAsync({ productId, name: groupName.trim(), required, maxSelect });
-      setGroupName('');
-      setRequired(false);
-      setMaxSelect(1);
-      toast.success('Grupo criado');
+      await attach.mutateAsync({ productId, groupId: selected });
+      setSelected('');
+      toast.success('Grupo anexado');
     } catch {
-      toast.error('Erro ao criar grupo');
+      toast.error('Erro ao anexar o grupo');
     }
   }
 
@@ -310,15 +346,19 @@ function OptionsEditor({ productId }: { productId: string }) {
     <div className="border-t border-dashed border-line bg-cream/30 px-5 py-4">
       {detail.isLoading && <p className="text-[12.5px] text-ink-mute">A carregar opções…</p>}
 
-      {!detail.isLoading && groups.length === 0 && (
+      {!detail.isLoading && attached.length === 0 && (
         <p className="mb-3 text-[12.5px] text-ink-mute">
-          Sem grupos de opções. Cria por exemplo <strong>Tamanho</strong> (obrigatório, escolhe 1)
-          ou <strong>Extras</strong> (até 3) — os preços somam ao produto.
+          Sem grupos anexados. Os grupos de complementos (ex.: <strong>Tamanho</strong>,{' '}
+          <strong>Extras</strong>) criam-se uma vez na aba{' '}
+          <button onClick={onGoToLibrary} className="font-medium text-brand hover:underline">
+            Personalizações
+          </button>{' '}
+          e anexam-se aqui aos produtos.
         </p>
       )}
 
-      <div className="space-y-3">
-        {groups.map((g) => (
+      <div className="space-y-2.5">
+        {attached.map((g) => (
           <div key={g.id} className="rounded-xl border border-line bg-white p-3.5">
             <div className="mb-2 flex items-center justify-between">
               <div className="flex flex-wrap items-center gap-2">
@@ -338,14 +378,19 @@ function OptionsEditor({ productId }: { productId: string }) {
               </div>
               <button
                 onClick={async () => {
-                  if (!confirm(`Apagar o grupo "${g.name}" e as suas opções?`)) return;
-                  await deleteGroup.mutateAsync({ id: g.id, productId });
-                  toast.success('Grupo apagado');
+                  if (!confirm(`Desanexar "${g.name}" deste produto? O grupo fica na biblioteca.`))
+                    return;
+                  try {
+                    await detach.mutateAsync({ productId, groupId: g.id });
+                    toast.success('Grupo desanexado');
+                  } catch {
+                    toast.error('Erro ao desanexar o grupo');
+                  }
                 }}
                 className="rounded-lg p-1.5 text-ink-mute hover:bg-red-50 hover:text-red-600"
-                title="Apagar grupo"
+                title="Desanexar deste produto (não apaga o grupo)"
               >
-                <Trash2 size={14} />
+                <X size={14} />
               </button>
             </div>
 
@@ -353,7 +398,7 @@ function OptionsEditor({ productId }: { productId: string }) {
               {g.modifiers.map((m) => (
                 <span
                   key={m.id}
-                  className="flex items-center gap-1.5 rounded-full border border-line bg-cream/60 py-1 pl-3 pr-1.5 text-[12px]"
+                  className="flex items-center gap-1.5 rounded-full border border-line bg-cream/60 px-3 py-1 text-[12px]"
                 >
                   {m.name}
                   {Number(m.priceDelta) > 0 && (
@@ -361,125 +406,56 @@ function OptionsEditor({ productId }: { productId: string }) {
                       +{Number(m.priceDelta).toFixed(2)} €
                     </span>
                   )}
-                  <button
-                    onClick={async () => {
-                      await deleteModifier.mutateAsync({ id: m.id, productId });
-                    }}
-                    className="rounded-full p-0.5 text-ink-mute hover:bg-red-100 hover:text-red-600"
-                    title="Remover opção"
-                  >
-                    <X size={12} />
-                  </button>
                 </span>
               ))}
-              <AddModifierChip
-                onAdd={async (name, delta) => {
-                  try {
-                    await createModifier.mutateAsync({ groupId: g.id, productId, name, priceDelta: delta });
-                  } catch {
-                    toast.error('Erro ao adicionar opção');
-                  }
-                }}
-              />
+              {g.modifiers.length === 0 && (
+                <span className="text-[11.5px] text-ink-mute">sem opções ainda</span>
+              )}
             </div>
           </div>
         ))}
       </div>
 
-      {/* novo grupo */}
-      <form onSubmit={addGroup} className="mt-3 flex flex-wrap items-end gap-2">
-        <div className="space-y-1">
-          <label className="block text-[11px] font-medium text-ink-soft">Novo grupo</label>
-          <input
-            value={groupName}
-            onChange={(e) => setGroupName(e.target.value)}
-            placeholder="Ex.: Tamanho, Extras…"
-            className="w-40 rounded-xl border border-line bg-white px-3 py-2 text-[12.5px] outline-none focus:border-brand"
-          />
-        </div>
-        <label className="flex items-center gap-1.5 pb-2.5 text-[12px]">
-          <input
-            type="checkbox"
-            checked={required}
-            onChange={(e) => setRequired(e.target.checked)}
-            className="h-3.5 w-3.5 accent-brand"
-          />
-          obrigatório
-        </label>
-        <div className="space-y-1">
-          <label className="block text-[11px] font-medium text-ink-soft">Máx. escolhas</label>
-          <select
-            value={maxSelect}
-            onChange={(e) => setMaxSelect(parseInt(e.target.value, 10))}
-            className="rounded-xl border border-line bg-white px-2 py-2 text-[12.5px]"
-          >
-            {[1, 2, 3, 4, 5, 10].map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
-        </div>
-        <button className="flex items-center gap-1 rounded-xl bg-brand px-3 py-2 text-[12.5px] font-semibold text-white hover:bg-brand-dark">
-          <Plus size={14} /> Grupo
+      {/* anexar grupo da biblioteca */}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {available.length > 0 ? (
+          <>
+            <select
+              value={selected}
+              onChange={(e) => setSelected(e.target.value)}
+              className="rounded-xl border border-line bg-white px-3 py-2 text-[12.5px] outline-none focus:border-brand"
+            >
+              <option value="">Anexar grupo…</option>
+              {available.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.name} ({g.modifiers.length} {g.modifiers.length === 1 ? 'opção' : 'opções'})
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={attachSelected}
+              disabled={!selected}
+              className="flex items-center gap-1 rounded-xl bg-brand px-3 py-2 text-[12.5px] font-semibold text-white hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Plus size={14} /> Anexar
+            </button>
+          </>
+        ) : (
+          !library.isLoading &&
+          attached.length > 0 && (
+            <span className="text-[12px] text-ink-mute">
+              Todos os grupos da biblioteca já estão anexados.
+            </span>
+          )
+        )}
+        <button
+          onClick={onGoToLibrary}
+          className="text-[12px] font-medium text-brand hover:underline"
+        >
+          Editar grupos na biblioteca →
         </button>
-      </form>
+      </div>
     </div>
-  );
-}
-
-/** Chip inline para acrescentar uma opção ao grupo. */
-function AddModifierChip({ onAdd }: { onAdd: (name: string, delta: number) => Promise<void> }) {
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState('');
-  const [delta, setDelta] = useState('');
-
-  if (!open) {
-    return (
-      <button
-        onClick={() => setOpen(true)}
-        className="flex items-center gap-1 rounded-full border border-dashed border-brand/50 px-3 py-1 text-[12px] font-medium text-brand hover:bg-brand-soft"
-      >
-        <Plus size={12} /> opção
-      </button>
-    );
-  }
-  return (
-    <span className="flex items-center gap-1.5 rounded-full border border-brand bg-white py-1 pl-2 pr-1.5">
-      <input
-        autoFocus
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        placeholder="nome"
-        className="w-20 bg-transparent text-[12px] outline-none"
-      />
-      <input
-        value={delta}
-        onChange={(e) => setDelta(e.target.value)}
-        placeholder="+€"
-        inputMode="decimal"
-        className="w-11 bg-transparent text-[12px] outline-none"
-      />
-      <button
-        onClick={async () => {
-          if (!name.trim()) return;
-          await onAdd(name.trim(), parseFloat(delta.replace(',', '.')) || 0);
-          setName('');
-          setDelta('');
-        }}
-        className="rounded-full bg-brand p-1 text-white hover:bg-brand-dark"
-        title="Guardar opção"
-      >
-        <Plus size={12} />
-      </button>
-      <button
-        onClick={() => setOpen(false)}
-        className="rounded-full p-1 text-ink-mute hover:text-ink"
-        title="Fechar"
-      >
-        <X size={12} />
-      </button>
-    </span>
   );
 }
 
