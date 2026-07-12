@@ -7,7 +7,8 @@ const scallopBottom = {
  *  (printFeed em globals.css); com reduced-motion aparece já impresso. */
 export function PrinterHero() {
   return (
-    <div className="relative mx-auto w-full max-w-[300px]">
+    // ilustração do produto: escondida de leitores de ecrã (o texto do hero conta a história)
+    <div aria-hidden="true" className="relative mx-auto w-full max-w-[300px]">
       <div
         className="absolute -inset-10 opacity-20 blur-3xl"
         style={{ background: 'radial-gradient(closest-side, #E05A1E, transparent)' }}
@@ -22,7 +23,7 @@ export function PrinterHero() {
               A imprimir
             </span>
           </div>
-          <span className="text-[10px] uppercase tracking-[0.18em] text-cream/30">
+          <span className="text-[10px] uppercase tracking-[0.18em] text-cream/40">
             térmica · 80 mm
           </span>
         </div>
@@ -65,6 +66,11 @@ export function PrinterHero() {
                 <span>2,40</span>
               </li>
             </ul>
+            <div className="my-4 border-t border-dashed border-ink/20" />
+            <div className="flex justify-between text-[13px] tabular-nums">
+              <span>Entrega</span>
+              <span>2,50</span>
+            </div>
             <div className="my-4 border-t border-dashed border-ink/20" />
             <div className="flex items-baseline justify-between">
               <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-mute">

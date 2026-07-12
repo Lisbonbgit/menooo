@@ -56,8 +56,9 @@ html {
     opacity: 0.35;
   }
 }
+/* pisca enquanto o talão imprime (2 ciclos ≈ duração da impressão) e fica aceso */
 .led-anim {
-  animation: ledBlink 1.6s ease-in-out infinite;
+  animation: ledBlink 1.55s ease-in-out 2;
 }
 
 @keyframes riseIn {
@@ -92,12 +93,14 @@ html {
   }
 }
 
-/* visíveis por omissão; só animam quando o Reveal marca o contentor */
+/* visíveis por omissão; só animam quando o Reveal marca o contentor.
+   O atraso vem de --reveal-delay (inline no JSX) — tem de viver dentro da
+   shorthand, senão esta repunha animation-delay: 0s por cima da utility */
 .is-inview .reveal-rise {
-  animation: riseIn 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: riseIn 0.7s cubic-bezier(0.22, 1, 0.36, 1) var(--reveal-delay, 0s) both;
 }
 .is-inview .reveal-order {
-  animation: orderIn 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: orderIn 0.55s cubic-bezier(0.22, 1, 0.36, 1) var(--reveal-delay, 0s) both;
 }
 .is-inview .ring-pulse {
   animation: ringPulse 1.8s cubic-bezier(0.22, 1, 0.36, 1) 1.2s infinite;

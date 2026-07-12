@@ -9,6 +9,7 @@ export function PhotoBand({
   kicker,
   title,
   sub,
+  priority = false,
   children,
 }: {
   src: string;
@@ -16,6 +17,8 @@ export function PhotoBand({
   kicker: string;
   title: string;
   sub: string;
+  /** true na primeira faixa: entra no viewport inicial em desktop (LCP) */
+  priority?: boolean;
   children?: ReactNode;
 }) {
   return (
@@ -26,6 +29,7 @@ export function PhotoBand({
         fill
         sizes="100vw"
         quality={70}
+        priority={priority}
         className="object-cover"
       />
       {/* overlay duplo: cor da marca + gradiente lateral para a zona do texto */}

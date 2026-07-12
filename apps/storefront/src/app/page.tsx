@@ -65,7 +65,7 @@ export default function HomePage() {
               </a>
               <a
                 href={`${DASHBOARD_URL}/register`}
-                className="rounded-lg bg-brand px-4 py-2 text-[13.5px] font-semibold text-white transition-colors hover:bg-brand-dark"
+                className="rounded-lg bg-brand-dark px-4 py-2 text-[13.5px] font-semibold text-white transition-colors hover:bg-brand-ink"
               >
                 Criar loja
               </a>
@@ -87,7 +87,7 @@ export default function HomePage() {
               <div className="mt-9 flex flex-wrap items-center gap-5">
                 <a
                   href={`${DASHBOARD_URL}/register`}
-                  className="group flex items-center gap-2.5 rounded-lg bg-brand px-6 py-3.5 text-[14.5px] font-semibold text-white transition-colors hover:bg-brand-dark"
+                  className="group flex items-center gap-2.5 rounded-lg bg-brand-dark px-6 py-3.5 text-[14.5px] font-semibold text-white transition-colors hover:bg-brand-ink"
                 >
                   Começar — 7 dias grátis
                   <ArrowRight
@@ -140,6 +140,7 @@ export default function HomePage() {
         kicker="Para quem está no balcão"
         title="Feito para o balcão, não para o back-office."
         sub="Menos ecrãs e menos passos: o Menooo vive ao lado da caixa e da cozinha, não numa central de suporte."
+        priority
       />
 
       {/* ---------- da encomenda ao talão ---------- */}
@@ -180,7 +181,7 @@ export default function HomePage() {
       >
         <a
           href={`${DASHBOARD_URL}/register`}
-          className="mt-7 inline-flex items-center gap-2.5 rounded-lg bg-brand px-6 py-3 text-[13.5px] font-semibold text-white transition-colors hover:bg-brand-dark"
+          className="mt-7 inline-flex items-center gap-2.5 rounded-lg bg-brand-dark px-6 py-3 text-[13.5px] font-semibold text-white transition-colors hover:bg-brand-ink"
         >
           Começar — 7 dias grátis <ArrowRight size={15} />
         </a>
@@ -245,7 +246,7 @@ export default function HomePage() {
           </ul>
           <a
             href={`${DASHBOARD_URL}/register`}
-            className="mt-9 inline-flex items-center gap-2.5 rounded-lg bg-brand px-7 py-3.5 text-[14.5px] font-semibold text-white transition-colors hover:bg-brand-dark"
+            className="mt-9 inline-flex items-center gap-2.5 rounded-lg bg-brand-dark px-7 py-3.5 text-[14.5px] font-semibold text-white transition-colors hover:bg-brand-ink"
           >
             Criar a minha loja <ArrowRight size={16} />
           </a>

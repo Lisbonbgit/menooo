@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import { ArrowRight, Bell, Plus } from 'lucide-react';
 import { Reveal } from './Reveal';
 
@@ -64,7 +65,7 @@ function PhoneMockup() {
         {/* barra do carrinho */}
         <div className="mx-3 mb-3 flex items-center justify-between rounded-lg bg-espresso px-3 py-2.5 text-cream">
           <span className="text-[9px] font-semibold">Ver carrinho</span>
-          <span className="text-[9px] font-semibold tabular-nums">3 itens · 36,00 €</span>
+          <span className="text-[9px] font-semibold tabular-nums">5 itens · 36,90 €</span>
         </div>
       </div>
     </div>
@@ -85,7 +86,10 @@ function CounterMockup() {
         </div>
         <div className="space-y-2 p-2.5">
           {/* pedido novo, entra animado */}
-          <div className="reveal-order rounded-lg border-2 border-brand bg-white p-2.5 shadow-card [animation-delay:0.5s]">
+          <div
+            className="reveal-order rounded-lg border-2 border-brand bg-white p-2.5 shadow-card"
+            style={{ '--reveal-delay': '0.5s' } as CSSProperties}
+          >
             <div className="flex items-center justify-between">
               <p className="text-[10px] font-semibold text-ink">#42 · Entrega</p>
               <span className="flex items-center gap-1 rounded-full bg-brand px-2 py-0.5 text-[8px] font-semibold text-white">
@@ -123,7 +127,10 @@ function CounterMockup() {
 
 function ReceiptMockup() {
   return (
-    <div className="reveal-rise mx-auto w-full max-w-[190px] rotate-[-1.5deg] drop-shadow-xl">
+    // a rotação vive num wrapper próprio: o riseIn anima transform no exterior
+    // e esmagaria o rotate se partilhassem o mesmo nó
+    <div className="reveal-rise mx-auto w-full max-w-[190px] drop-shadow-xl">
+      <div className="rotate-[-1.5deg]">
       <div className="h-2.5" style={scallop.top} />
       <div className="bg-white px-4 pb-4 pt-3 text-ink">
         <p className="text-center text-[8.5px] font-semibold uppercase tracking-[0.24em] text-ink-mute">
@@ -148,6 +155,13 @@ function ReceiptMockup() {
           </li>
         </ul>
         <div className="my-2.5 border-t border-dashed border-ink/20" />
+        <ul className="space-y-1 text-[9px] tabular-nums">
+          <li className="flex justify-between">
+            <span>Entrega</span>
+            <span>2,50</span>
+          </li>
+        </ul>
+        <div className="my-2.5 border-t border-dashed border-ink/20" />
         <div className="flex items-baseline justify-between">
           <span className="text-[8px] font-semibold uppercase tracking-[0.16em] text-ink-mute">
             Total
@@ -156,6 +170,7 @@ function ReceiptMockup() {
         </div>
       </div>
       <div className="h-2.5" style={scallop.bottom} />
+      </div>
     </div>
   );
 }
@@ -184,27 +199,22 @@ export function OrderFlow() {
 
       <Reveal className="mt-14 grid items-start gap-12 md:grid-cols-3 md:gap-8">
         {STEPS.map(([titulo, texto, Mock], i) => (
-          <div key={titulo} className="relative">
-            <div className="flex items-center md:h-[340px]">
+          <div key={titulo} style={{ '--reveal-delay': `${i * 0.12}s` } as CSSProperties}>
+            {/* os mockups são ilustração: escondidos de leitores de ecrã,
+                a história fica nas legendas por baixo */}
+            <div aria-hidden="true" className="relative flex items-center md:h-[340px]">
               <Mock />
+              {/* seta de ligação entre passos (só em desktop) */}
+              {i < 2 && (
+                <ArrowRight
+                  size={18}
+                  className="absolute -right-[22px] top-1/2 hidden -translate-y-1/2 text-brand md:block"
+                />
+              )}
             </div>
-            {/* seta de ligação entre passos (só em desktop) */}
-            {i < 2 && (
-              <ArrowRight
-                size={18}
-                className="absolute -right-[22px] top-1/2 hidden -translate-y-1/2 text-brand md:block"
-              />
-            )}
             <div className="mt-6 border-t border-line pt-4">
-              <div className="flex items-baseline gap-3">
-                <span className="font-display text-[13px] font-semibold text-brand-dark">
-                  {i + 1}
-                </span>
-                <div>
-                  <h3 className="text-[15px] font-semibold">{titulo}</h3>
-                  <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink-soft">{texto}</p>
-                </div>
-              </div>
+              <h3 className="text-[15px] font-semibold">{titulo}</h3>
+              <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink-soft">{texto}</p>
             </div>
           </div>
         ))}
