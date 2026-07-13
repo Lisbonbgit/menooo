@@ -2,14 +2,11 @@ import Link from 'next/link';
 import { Flame } from 'lucide-react';
 import type { ReactNode } from 'react';
 
-/**
- * Dados da entidade — PREENCHER antes da divulgação pública.
- * Trocar os três valores abaixo e as páginas /termos e /privacidade ficam finais.
- */
+/** Dados da entidade legal que opera a plataforma Menooo. */
 export const ENTIDADE = {
   nome: 'Fordaimon Foods Lda',
   nif: '517542510',
-  morada: '[MORADA COMPLETA — preencher]',
+  morada: 'Praceta do Infantário 6, R/C D, 2720-304 Águas Livres, Amadora',
   email: 'geral@menooo.com',
 };
 
