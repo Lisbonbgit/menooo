@@ -146,6 +146,21 @@ export class AuthService {
       : null;
     if (tenant) void this.mail.sendWelcome(verified.email, verified.name, tenant.name);
 
+    // aviso interno: registo confirmado com loja pendente de ativação no admin
+    if (tenant && tenant.status === 'PENDING') {
+      const account = await this.prisma.account.findUnique({
+        where: { id: tenant.accountId },
+        select: { referralSource: true },
+      });
+      void this.mail.sendNewRegistrationAlert({
+        restaurantName: tenant.name,
+        slug: tenant.slug,
+        ownerName: verified.name,
+        ownerEmail: verified.email,
+        referralSource: account?.referralSource,
+      });
+    }
+
     const tokens = await this.issueTokens(verified, tenant?.id ?? null);
     return { tenant, user: this.sanitizeUser(verified), ...tokens };
   }

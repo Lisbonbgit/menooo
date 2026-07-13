@@ -5,6 +5,10 @@ import type { Transporter } from 'nodemailer';
 // URLs públicas (mesmas envs do billing)
 const DASHBOARD_URL = () => process.env.DASHBOARD_URL ?? 'https://painel.menooo.com';
 const STORE_URL = () => process.env.STORE_URL ?? 'https://menooo.com';
+const ADMIN_URL = () => process.env.ADMIN_URL ?? 'https://admin.menooo.com';
+
+// caixa da equipa que recebe os avisos internos da plataforma
+const NOTIFY_EMAIL = () => process.env.PLATFORM_NOTIFY_EMAIL ?? 'geral@lisbonb.com';
 
 const fmtDate = (d: Date | string) =>
   new Date(d).toLocaleDateString('pt-PT', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -126,6 +130,30 @@ export class MailService {
           `Entretanto já podes entrar no painel e adiantar trabalho: montar o menu com tamanhos e extras, definir horários e configurar a impressão de talões.`,
         ) +
         this.cta('Abrir o painel', `${DASHBOARD_URL()}/menu`),
+    );
+  }
+
+  /** 1b. Aviso interno à equipa: restaurante novo à espera de ativação no admin. */
+  async sendNewRegistrationAlert(info: {
+    restaurantName: string;
+    slug: string;
+    ownerName: string;
+    ownerEmail: string;
+    referralSource?: string | null;
+  }) {
+    await this.send(
+      NOTIFY_EMAIL(),
+      `Novo registo: ${info.restaurantName} — pendente de ativação`,
+      this.h('Restaurante novo à espera de ativação') +
+        this.p(
+          `<strong>${info.restaurantName}</strong> (/${info.slug}) acabou de confirmar o registo no Menooo.`,
+        ) +
+        this.p(
+          `Dono: <strong>${info.ownerName}</strong> · ${info.ownerEmail}` +
+            (info.referralSource ? `<br>Como nos conheceu: ${info.referralSource}` : ''),
+        ) +
+        this.cta('Abrir o admin e ativar', ADMIN_URL()) +
+        this.p('A loja fica invisível ao público até ser ativada.'),
     );
   }
 
