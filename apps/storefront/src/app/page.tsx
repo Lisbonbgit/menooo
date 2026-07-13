@@ -2,6 +2,7 @@ import { Flame, ArrowRight } from 'lucide-react';
 import { PrinterHero } from './_landing/PrinterHero';
 import { PhotoBand } from './_landing/PhotoBand';
 import { OrderFlow } from './_landing/OrderFlow';
+import { BrandPromise } from './_landing/BrandPromise';
 import { CostTable } from './_landing/CostTable';
 import { Faq } from './_landing/Faq';
 import { Contact } from './_landing/Contact';
@@ -222,6 +223,9 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      {/* ---------- promessa da marca ---------- */}
+      <BrandPromise />
 
       {/* ---------- comparação de custos ---------- */}
       <CostTable />
