@@ -38,7 +38,7 @@ function localNow() {
 export default function CheckoutPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
   const store = useStore(slug);
-  const { items, setQuantity, removeItem, subtotal, clear } = useCartStore();
+  const { items, storeSlug: cartSlug, setQuantity, removeItem, subtotal, clear } = useCartStore();
 
   const [type, setType] = useState<OrderType>('DELIVERY');
   const [firstName, setFirstName] = useState('');
@@ -134,6 +134,34 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
           >
             Voltar à loja
           </Link>
+        </div>
+      </main>
+    );
+  }
+
+  // o carrinho persistido pertence a OUTRA loja: nunca submeter aqui às cegas
+  if (items.length > 0 && cartSlug && cartSlug !== slug) {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center gap-4 px-4 text-center">
+        {s && <StoreTheme brandColor={s.brandColor} heroColor={s.heroColor} />}
+        <ShoppingBag size={30} strokeWidth={1.5} className="text-ink-mute" />
+        <p className="max-w-xs text-[15px] leading-relaxed text-ink-soft">
+          O teu carrinho pertence a outra loja. Queres terminar essa encomenda ou começar uma
+          nova aqui?
+        </p>
+        <div className="flex flex-wrap justify-center gap-2.5">
+          <Link
+            href={`/${cartSlug}/checkout`}
+            className="rounded-xl bg-brand px-5 py-3 text-[14px] font-semibold text-white shadow-card transition-colors hover:bg-brand-dark"
+          >
+            Terminar a outra encomenda
+          </Link>
+          <button
+            onClick={() => clear()}
+            className="rounded-xl border border-line bg-white px-5 py-3 text-[14px] font-medium text-ink-soft transition-colors hover:bg-cream"
+          >
+            Esvaziar e começar aqui
+          </button>
         </div>
       </main>
     );

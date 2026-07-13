@@ -15,7 +15,16 @@ export default function StorePage({ params }: { params: Promise<{ slug: string }
   const store = useStore(slug);
   const menu = useMenu(slug);
   const addItem = useCartStore((s) => s.addItem);
+  const conflictsWith = useCartStore((s) => s.conflictsWith);
   const [optionsFor, setOptionsFor] = useState<Product | null>(null);
+
+  /** O carrinho é por loja: se vier de outra, pede confirmação antes de o substituir. */
+  function confirmReplaceCart(storeName: string): boolean {
+    if (!conflictsWith(slug)) return true;
+    return confirm(
+      `Tens um carrinho aberto noutra loja. Substituí-lo por artigos da ${storeName}?`,
+    );
+  }
 
   if (store.isLoading) {
     return (
@@ -44,6 +53,7 @@ export default function StorePage({ params }: { params: Promise<{ slug: string }
       setOptionsFor(product);
       return;
     }
+    if (!confirmReplaceCart(s.name)) return;
     addItem(slug, {
       productId: product.id,
       name: product.name,
@@ -203,6 +213,7 @@ export default function StorePage({ params }: { params: Promise<{ slug: string }
           product={optionsFor}
           onClose={() => setOptionsFor(null)}
           onAdd={(unitPrice, modifiers) => {
+            if (!confirmReplaceCart(s.name)) return;
             addItem(slug, {
               productId: optionsFor.id,
               name: optionsFor.name,

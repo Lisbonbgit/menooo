@@ -22,6 +22,8 @@ export interface CartItem {
 interface CartState {
   storeSlug: string | null;
   items: CartItem[];
+  /** Há um carrinho de OUTRA loja que seria substituído ao adicionar nesta? */
+  conflictsWith: (slug: string) => boolean;
   addItem: (slug: string, item: Omit<CartItem, 'key' | 'quantity'>, quantity?: number) => void;
   setQuantity: (key: string, quantity: number) => void;
   removeItem: (key: string) => void;
@@ -40,9 +42,15 @@ export const useCartStore = create<CartState>()(
       storeSlug: null,
       items: [],
 
+      conflictsWith: (slug) => {
+        const s = get();
+        return !!s.storeSlug && s.storeSlug !== slug && s.items.length > 0;
+      },
+
       addItem: (slug, item, quantity = 1) => {
         const state = get();
         // carrinho é por loja: trocar de loja limpa o carrinho
+        // (a UI confirma com o cliente antes, via conflictsWith)
         const base = state.storeSlug && state.storeSlug !== slug ? [] : state.items;
         const key = makeKey(item.productId, item.modifiers);
         const existing = base.find((i) => i.key === key);
