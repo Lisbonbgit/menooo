@@ -204,8 +204,22 @@ export default function StorePage({ params }: { params: Promise<{ slug: string }
         ))}
       </div>
 
-      <footer className="mt-16 px-4 pb-6 text-center text-[11.5px] text-ink-mute">
-        loja online por <span className="font-display font-semibold text-ink-soft">Menooo</span>
+      <footer className="mt-16 space-y-2 px-4 pb-6 text-center text-[11.5px] text-ink-mute">
+        <p>
+          loja online por <span className="font-display font-semibold text-ink-soft">Menooo</span>
+        </p>
+        <p className="space-x-3">
+          <a href="/termos" className="hover:text-ink">Termos</a>
+          <a href="/privacidade" className="hover:text-ink">Privacidade</a>
+          <a
+            href="https://www.livroreclamacoes.pt/Inicio/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-ink"
+          >
+            Livro de Reclamações
+          </a>
+        </p>
       </footer>
 
       {optionsFor && (

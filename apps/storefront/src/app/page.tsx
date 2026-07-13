@@ -259,6 +259,19 @@ export default function HomePage() {
             <Flame size={13} className="text-brand" />
             <span className="font-display text-[13px] font-semibold text-ink-soft">Menooo</span>
           </span>
+          <nav className="flex flex-wrap items-center gap-x-5 gap-y-1">
+            <a href="/termos" className="hover:text-ink">Termos</a>
+            <a href="/privacidade" className="hover:text-ink">Privacidade</a>
+            <a
+              href="https://www.livroreclamacoes.pt/Inicio/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-ink"
+            >
+              Livro de Reclamações
+            </a>
+            <a href="mailto:geral@menooo.com" className="hover:text-ink">geral@menooo.com</a>
+          </nav>
           <span>© {new Date().getFullYear()} — encomendas online para restaurantes</span>
         </div>
       </footer>

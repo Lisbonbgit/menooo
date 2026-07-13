@@ -228,6 +228,28 @@ export default function RegisterPage() {
             {loading ? 'A criar a loja…' : 'Criar loja'} {!loading && <ArrowRight size={16} />}
           </button>
 
+          <p className="mt-3 text-center text-[11.5px] leading-relaxed text-ink-mute">
+            Ao criar conta aceitas os{' '}
+            <a
+              href={`${STORE_URL}/termos`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:text-ink"
+            >
+              Termos e Condições
+            </a>{' '}
+            e a{' '}
+            <a
+              href={`${STORE_URL}/privacidade`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:text-ink"
+            >
+              Política de Privacidade
+            </a>
+            .
+          </p>
+
           <p className="mt-5 text-center text-[13px] text-ink-soft">
             Já tens conta?{' '}
             <Link href="/login" className="font-semibold text-brand hover:underline">
