@@ -16,9 +16,28 @@ const sans = Schibsted_Grotesk({
   variable: '--font-sans-app',
 });
 
+const SITE_URL = process.env.NEXT_PUBLIC_STORE_URL ?? 'https://menooo.com';
+
 export const metadata: Metadata = {
-  title: 'Menooo — Encomendar',
-  description: 'Faça a sua encomenda online, direta ao restaurante',
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: 'Menooo — Loja online para o teu restaurante, sem comissões · €9,90/mês',
+    template: '%s',
+  },
+  description:
+    'Cria a loja online do teu restaurante em minutos. Pedidos no balcão em tempo real, talão impresso automaticamente, 0% de comissões. 7 dias grátis.',
+  openGraph: {
+    type: 'website',
+    siteName: 'Menooo',
+    title: 'Menooo — Loja online para o teu restaurante, sem comissões',
+    description:
+      'Pedidos no balcão em tempo real, talão impresso automaticamente, 0% de comissões. €9,90/mês, 7 dias grátis.',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Menooo — Loja online para o teu restaurante, sem comissões',
+    description: 'Pedidos em tempo real, talão automático, 0% comissões. €9,90/mês, 7 dias grátis.',
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

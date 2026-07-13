@@ -7,8 +7,8 @@ import type { ReactNode } from 'react';
  * Trocar os três valores abaixo e as páginas /termos e /privacidade ficam finais.
  */
 export const ENTIDADE = {
-  nome: '[ENTIDADE LEGAL — preencher]',
-  nif: '[NIF — preencher]',
+  nome: 'Fordaimon Foods Lda',
+  nif: '517542510',
   morada: '[MORADA COMPLETA — preencher]',
   email: 'geral@menooo.com',
 };
