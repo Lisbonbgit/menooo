@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Flame, Store, ArrowRight, Percent, BellRing, Printer } from 'lucide-react';
+import { Flame, Store, ArrowRight, Percent, BellRing, Printer, Clock } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth-store';
 
@@ -227,6 +227,11 @@ export default function RegisterPage() {
           >
             {loading ? 'A criar a loja…' : 'Criar loja'} {!loading && <ArrowRight size={16} />}
           </button>
+
+          <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-[12.5px] text-ink-soft">
+            <Clock size={13} className="text-brand-dark" />
+            Aprovamos a tua loja normalmente no próprio dia útil.
+          </p>
 
           <p className="mt-3 text-center text-[11.5px] leading-relaxed text-ink-mute">
             Ao criar conta aceitas os{' '}

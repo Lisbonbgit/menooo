@@ -6,6 +6,7 @@ import { clsx } from 'clsx';
 import { ShoppingBag, Bike, ArrowUpRight } from 'lucide-react';
 import { api } from '@/lib/api';
 import { AppShell } from '@/components/AppShell';
+import { OnboardingChecklist } from '@/components/OnboardingChecklist';
 import type { Order, OrderStatus } from '@/lib/types';
 
 interface Summary {
@@ -71,6 +72,9 @@ export default function OverviewPage() {
         </Link>
       }
     >
+      {/* checklist de arranque do trial (esconde-se quando completo/dispensado) */}
+      <OnboardingChecklist />
+
       {/* banda de indicadores */}
       <div className="animate-fade-up grid grid-cols-2 divide-line rounded-xl border border-line bg-white sm:grid-cols-4 sm:divide-x">
         <Stat label="Encomendas hoje" value={s ? String(s.todayCount) : '—'} />

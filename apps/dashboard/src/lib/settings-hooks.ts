@@ -14,6 +14,7 @@ export interface TenantSettings {
   id: string;
   name: string;
   slug: string;
+  status?: 'PENDING' | 'ACTIVE' | 'SUSPENDED' | 'CLOSED';
   logoUrl: string | null;
   coverUrl: string | null;
   brandColor: string | null;

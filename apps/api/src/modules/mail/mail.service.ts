@@ -131,19 +131,28 @@ export class MailService {
     );
   }
 
-  /** 1. Boas-vindas, logo após o registo. */
+  /** 1. Boas-vindas, logo após o registo — com os próximos passos. */
   async sendWelcome(to: string, ownerName: string, restaurantName: string) {
+    const steps = [
+      'Monta o menu — categorias, produtos, tamanhos e extras.',
+      'Define os horários e a zona de entrega.',
+      'Liga a impressora térmica (opcional — também imprime pelo browser).',
+      'Faz uma encomenda de teste assim que a loja for aprovada.',
+    ];
+    const ol =
+      `<ol style="margin:0 0 14px;padding-left:20px;color:#6E6156;font-size:15px;line-height:1.7;font-family:Arial,Helvetica,sans-serif;">` +
+      steps.map((s) => `<li style="margin-bottom:6px;">${s}</li>`).join('') +
+      `</ol>`;
     await this.send(
       to,
       `Bem-vindo ao Menooo — a ${restaurantName} foi criada`,
       this.h(`Bem-vindo, ${ownerName}.`) +
         this.p(
-          `A tua loja <strong>${restaurantName}</strong> foi criada e está em análise pela nossa equipa — normalmente aprovamos no próprio dia.`,
+          `A tua loja <strong>${restaurantName}</strong> foi criada e está em análise pela nossa equipa — normalmente aprovamos no próprio dia útil.`,
         ) +
-        this.p(
-          `Entretanto já podes entrar no painel e adiantar trabalho: montar o menu com tamanhos e extras, definir horários e configurar a impressão de talões.`,
-        ) +
-        this.cta('Abrir o painel', `${DASHBOARD_URL()}/menu`),
+        this.p('Entretanto já podes adiantar trabalho no painel. Os próximos passos:') +
+        ol +
+        this.cta('Abrir o painel', `${DASHBOARD_URL()}/overview`),
     );
   }
 
