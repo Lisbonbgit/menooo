@@ -2,7 +2,6 @@ import { Flame, ArrowRight } from 'lucide-react';
 import { PrinterHero } from './_landing/PrinterHero';
 import { PhotoBand } from './_landing/PhotoBand';
 import { OrderFlow } from './_landing/OrderFlow';
-import { SocialProof } from './_landing/SocialProof';
 import { CostTable } from './_landing/CostTable';
 import { Faq } from './_landing/Faq';
 import { Contact } from './_landing/Contact';
@@ -223,9 +222,6 @@ export default function HomePage() {
           </div>
         </div>
       </section>
-
-      {/* ---------- prova social ---------- */}
-      <SocialProof />
 
       {/* ---------- comparação de custos ---------- */}
       <CostTable />

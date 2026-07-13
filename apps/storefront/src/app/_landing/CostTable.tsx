@@ -22,7 +22,7 @@ export function CostTable() {
       <div className="mt-10 overflow-x-auto">
         <table className="w-full min-w-[560px] border-collapse text-[14px]">
           <thead>
-            <tr className="border-b border-ink/15 text-left text-[11.5px] uppercase tracking-[0.1em] text-ink-mute">
+            <tr className="border-b border-ink/15 text-left text-[11.5px] uppercase tracking-[0.1em] text-ink-soft">
               <th className="py-3 pr-4 font-semibold">Faturas / mês</th>
               <th className="px-4 py-3 text-right font-semibold">Comissão (30%)</th>
               <th className="px-4 py-3 text-right font-semibold">IVA (23%)</th>
@@ -48,8 +48,9 @@ export function CostTable() {
         </table>
       </div>
 
-      <p className="mt-4 text-[12px] text-ink-mute">
-        Comissão de referência ~30% (cada app cobra a sua); IVA de 23% incluído no custo das apps.
+      <p className="mt-4 text-[12px] text-ink-soft">
+        Comissão de referência ~30% (cada app cobra a sua). Valores com IVA incluído dos dois lados —
+        tanto no custo das apps como na mensalidade do Menooo (€9,90).
       </p>
     </section>
   );

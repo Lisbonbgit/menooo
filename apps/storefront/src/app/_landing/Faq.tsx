@@ -23,7 +23,7 @@ const QA: Array<[string, React.ReactNode]> = [
   ],
   [
     'Quanto tempo demora a aprovação?',
-    'Analisamos e aprovamos a loja em menos de 2 horas em dias úteis. Enquanto isso, já podes montar o menu no painel.',
+    'Analisamos e aprovamos a loja normalmente no próprio dia útil. Enquanto isso, já podes montar o menu no painel.',
   ],
 ];
 
