@@ -42,16 +42,16 @@ const CATEGORIES = [
   {
     name: 'Bebidas',
     products: [
-      ['Água 0,5 L', 'Água mineral natural', 1.5, '1617937380131-7a8552821bd9'],
-      ['Coca-Cola', 'Lata 33 cl', 1.8, '1622483767028-3f66f32aef97'],
-      ['Fanta Laranja', 'Lata 33 cl', 1.8, '1625740822008-e45abf4e01d5'],
-      ['Sprite', 'Lata 33 cl', 1.8, '1680404005217-a441afdefe83'],
+      ['Água 0,5 L', 'Água mineral natural', 1.5, '1534616042650-80f5c9b61f09'],
+      ['Coca-Cola', 'Copo com gelo, 33 cl', 1.8, '1629654613528-5d0a2e4166de'],
+      ['Fanta Laranja', 'Copo, 33 cl', 1.8, '1600271886742-f049cd451bba'],
+      ['Sprite', 'Copo com gelo e limão, 33 cl', 1.8, '1607690506833-498e04ab3ffa'],
     ],
   },
   {
     name: 'Sobremesas',
     products: [
-      ['Tiramisù', 'Clássico italiano com café e mascarpone', 4.5, '1698688334089-c68105801d02'],
+      ['Tiramisù', 'Clássico italiano com café e mascarpone', 4.5, '1517400415121-f913b6f87532'],
       ['Bolo de Chocolate', 'Fatia de bolo de chocolate com ganache', 4.0, '1662230786065-154eafffa3e6'],
       ['Cheesecake', 'Cheesecake com calda de frutos vermelhos', 4.5, '1714385905983-6f8e06fffae1'],
     ],
@@ -62,6 +62,12 @@ async function main() {
   const tenant = await prisma.tenant.findUnique({ where: { slug: SLUG } });
   if (!tenant) throw new Error(`Loja demo "${SLUG}" não encontrada.`);
   const tenantId = tenant.id;
+
+  // capa da montra (hero + preview OG quando a demo é partilhada)
+  await prisma.tenant.update({
+    where: { id: tenantId },
+    data: { coverUrl: img('1513104890138-7c749659a591') },
+  });
 
   // limpar o menu atual (categorias→produtos→links em cascata; grupos e cupões à parte)
   await prisma.category.deleteMany({ where: { tenantId } });
