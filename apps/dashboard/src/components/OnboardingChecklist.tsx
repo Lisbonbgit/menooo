@@ -23,24 +23,27 @@ export function OnboardingChecklist() {
   const hours = useHours();
   const zones = useZones();
   const tenant = useTenant();
+  // mesma queryKey do /overview → partilha a cache, sem pedido duplicado a /orders
   const orders = useQuery({
-    queryKey: ['onboarding-orders'],
+    queryKey: ['orders-recent'],
     queryFn: async () => (await api.get<unknown[]>('/orders')).data,
   });
 
-  // estado local (localStorage) — lido no cliente para evitar mismatch de SSR
+  // estado local — lido no cliente para evitar mismatch de SSR.
+  // "dispensar" fica em sessionStorage (volta na sessão seguinte); o estado da
+  // impressora é um passo concluído, esse fica em localStorage.
   const [ready, setReady] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const [printerDone, setPrinterDone] = useState(false);
 
   useEffect(() => {
-    setDismissed(localStorage.getItem(DISMISS_KEY) === '1');
+    setDismissed(sessionStorage.getItem(DISMISS_KEY) === '1');
     setPrinterDone(localStorage.getItem(PRINTER_KEY) === '1');
     setReady(true);
   }, []);
 
   function dismiss() {
-    localStorage.setItem(DISMISS_KEY, '1');
+    sessionStorage.setItem(DISMISS_KEY, '1');
     setDismissed(true);
   }
   function markPrinter() {
@@ -96,7 +99,7 @@ export function OnboardingChecklist() {
           Abrir a loja <ArrowRight size={13} />
         </a>
       ) : (
-        <span className="flex items-center gap-1.5 rounded-lg border border-dashed border-line px-3 py-1.5 text-[12.5px] font-medium text-ink-mute">
+        <span className="flex items-center gap-1.5 rounded-lg border border-dashed border-line px-3 py-1.5 text-[12.5px] font-medium text-ink-soft">
           <Lock size={12} /> por aprovar
         </span>
       ),
@@ -104,9 +107,13 @@ export function OnboardingChecklist() {
   ];
 
   const doneCount = steps.filter((s) => s.done).length;
+  // só decide com dados reais (evita flash e falso-pendente em erro de rede)
+  const loaded = [products, hours, zones, tenant, orders].every((q) => q.isSuccess);
+  // auto-esconde quando os passos DETETÁVEIS estão feitos — o da impressora é
+  // manual/opcional e não deve prender lojas já a funcionar em "3 de 4"
+  const autoComplete = steps.every((s) => s.done || s.key === 'printer');
 
-  // ainda a ler localStorage, dispensado, ou tudo feito → não mostrar
-  if (!ready || dismissed || doneCount === steps.length) return null;
+  if (!ready || !loaded || dismissed || autoComplete) return null;
 
   return (
     <section className="animate-fade-up mb-6 rounded-xl border border-line bg-white p-5 shadow-card">
@@ -116,7 +123,9 @@ export function OnboardingChecklist() {
             Põe a tua loja a andar
           </h2>
           <p className="mt-0.5 text-[12.5px] text-ink-soft">
-            {doneCount} de {steps.length} passos feitos — faltam poucos para vender.
+            {doneCount === 0
+              ? `${steps.length} passos rápidos para começares a vender.`
+              : `${doneCount} de ${steps.length} passos feitos — faltam poucos para vender.`}
           </p>
         </div>
         <button
@@ -142,7 +151,7 @@ export function OnboardingChecklist() {
             <span
               className={
                 'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold ' +
-                (step.done ? 'bg-brand text-white' : 'border border-line text-ink-mute')
+                (step.done ? 'bg-brand text-white' : 'border border-line text-ink-soft')
               }
             >
               {step.done ? <Check size={15} strokeWidth={2.6} /> : i + 1}
