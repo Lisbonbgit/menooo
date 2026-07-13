@@ -14,6 +14,7 @@ import { CreateTenantDto } from './dto/create-tenant.dto';
 import { OpeningHourDto } from './dto/opening-hours.dto';
 import { computeOpenNow } from './open-now.util';
 import { computeSubscription, isSubscriptionUsable } from './subscription.util';
+import { isReservedSlug } from '../../common/reserved-slugs';
 
 @Injectable()
 export class TenantsService {
@@ -86,6 +87,9 @@ export class TenantsService {
 
   /** Cria uma nova unidade na conta do dono (fica PENDING até o admin ativar). */
   async createTenant(accountId: string, dto: CreateTenantDto) {
+    if (isReservedSlug(dto.slug)) {
+      throw new BadRequestException('Esse endereço de loja (slug) não está disponível.');
+    }
     const existingSlug = await this.prisma.tenant.findUnique({ where: { slug: dto.slug } });
     if (existingSlug) {
       throw new BadRequestException('Esse endereço de loja (slug) já está em uso.');

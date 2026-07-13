@@ -44,7 +44,7 @@ export default function TermosPage() {
       <h2>4. Preço e subscrição</h2>
       <ul>
         <li>Período de teste gratuito de 7 dias a partir da ativação da primeira loja.</li>
-        <li>Depois do teste: subscrição de <strong>€9,90/mês</strong> (IVA incluído, salvo indicação em contrário), sem comissões sobre as vendas.</li>
+        <li>Depois do teste: subscrição de <strong>€9,90/mês</strong>, sem comissões sobre as vendas.</li>
         <li>Sem fidelização: podes cancelar a qualquer momento e o acesso mantém-se até ao fim do período pago.</li>
         <li>Sem pagamento válido após o teste, as lojas ficam offline até a subscrição ser ativada.</li>
       </ul>

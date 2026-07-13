@@ -12,6 +12,7 @@ import { randomInt } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { AuthenticatedUser } from '../../common/types/authenticated-user';
+import { isReservedSlug } from '../../common/reserved-slugs';
 import { RegisterRestaurantDto } from './dto/register-restaurant.dto';
 import { LoginDto } from './dto/login.dto';
 
@@ -33,6 +34,9 @@ export class AuthService {
    * OWNER, e devolve tokens já com essa unidade ativa.
    */
   async registerRestaurant(dto: RegisterRestaurantDto) {
+    if (isReservedSlug(dto.slug)) {
+      throw new ConflictException('Esse endereço de loja (slug) não está disponível.');
+    }
     const existingSlug = await this.prisma.tenant.findUnique({ where: { slug: dto.slug } });
     if (existingSlug) {
       throw new ConflictException('Esse endereço de loja (slug) já está em uso.');
@@ -196,12 +200,12 @@ export class AuthService {
     });
     if (!user) return { ok: true };
 
+    // dentro do cooldown: resposta igualmente neutra (um 400 aqui seria um
+    // oráculo de que o email existe), simplesmente sem reenviar
     const sentRecently =
       user.passwordResetExpiresAt &&
       user.passwordResetExpiresAt.getTime() - Date.now() > CODE_TTL_MS - RESEND_COOLDOWN_MS;
-    if (sentRecently) {
-      throw new BadRequestException('Aguarda um momento antes de pedir um novo código.');
-    }
+    if (sentRecently) return { ok: true };
 
     const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
     await this.prisma.user.update({

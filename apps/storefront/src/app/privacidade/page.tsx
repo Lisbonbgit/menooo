@@ -31,7 +31,7 @@ export default function PrivacidadePage() {
 
       <h2>2. Que dados tratamos e para quê</h2>
       <ul>
-        <li><strong>Conta do restaurante:</strong> nome, email, password (cifrada), dados da loja — para prestar o serviço (execução de contrato).</li>
+        <li><strong>Conta do restaurante:</strong> nome, email, password (guardada de forma irreversível — hash Argon2), dados da loja — para prestar o serviço (execução de contrato).</li>
         <li><strong>Encomendas:</strong> nome, contacto e morada do cliente final — para o restaurante preparar e entregar (execução de contrato).</li>
         <li><strong>Pagamentos da subscrição:</strong> processados pela Stripe; não guardamos números de cartão.</li>
         <li><strong>Emails transacionais:</strong> códigos de verificação, avisos de subscrição — enviados através do fornecedor SMTP.</li>
@@ -72,8 +72,8 @@ export default function PrivacidadePage() {
 
       <h2>7. Segurança</h2>
       <p>
-        Passwords guardadas com cifragem forte (Argon2), acesso por HTTPS, isolamento de dados
-        por restaurante e cópias de segurança regulares.
+        Passwords guardadas com hash criptográfico robusto (Argon2), acesso por HTTPS,
+        isolamento de dados por restaurante e cópias de segurança da base de dados.
       </p>
 
       <h2>8. Alterações</h2>
