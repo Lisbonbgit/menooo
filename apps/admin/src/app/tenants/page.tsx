@@ -256,8 +256,8 @@ export default function TenantsPage() {
                           {STATUS[t.status].label}
                         </span>
                         {t.account.status === 'BANNED' && (
-                          <span className="rounded-full bg-red-600 px-2.5 py-1 text-[11px] font-semibold text-white">
-                            banida
+                          <span className="whitespace-nowrap rounded-full bg-red-100 px-2.5 py-1 text-[11px] font-semibold text-red-700">
+                            Empresa banida
                           </span>
                         )}
                       </span>
@@ -683,12 +683,12 @@ function AccountCard({ account, onDeleted }: { account: AccountSummary; onDelete
           <h4 className="text-[13.5px] font-semibold">Empresa</h4>
           <span className="text-[12.5px] text-ink-soft">{account.name}</span>
           {banned ? (
-            <span className="rounded-full bg-red-600 px-2.5 py-1 text-[11px] font-semibold text-white">
-              banida {account.bannedAt ? `· ${new Date(account.bannedAt).toLocaleDateString('pt-PT')}` : ''}
+            <span className="rounded-full bg-red-100 px-2.5 py-1 text-[11px] font-semibold text-red-700">
+              Banida{account.bannedAt ? ` · ${new Date(account.bannedAt).toLocaleDateString('pt-PT')}` : ''}
             </span>
           ) : (
             <span className="rounded-full bg-green-100 px-2.5 py-1 text-[11px] font-semibold text-green-800">
-              ativa
+              Ativa
             </span>
           )}
         </div>

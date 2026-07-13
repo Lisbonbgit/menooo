@@ -83,20 +83,13 @@ export class AuthService {
     const valid = await argon2.verify(user.passwordHash, dto.password);
     if (!valid) throw new UnauthorizedException('Credenciais inválidas.');
 
+    // empresa banida: recusa ANTES do desvio para verificação de email,
+    // senão o fluxo do código contornava o bloqueio
+    await this.assertAccountNotBanned(user.accountId);
+
     // conta por verificar: encaminha para o ecrã do código (sem reenviar aqui)
     if (!user.emailVerifiedAt) {
       return { needsVerification: true, email: user.email };
-    }
-
-    // empresa banida pelo administrador da plataforma: sem acesso
-    if (user.accountId) {
-      const account = await this.prisma.account.findUnique({
-        where: { id: user.accountId },
-        select: { status: true },
-      });
-      if (account?.status === 'BANNED') {
-        throw new ForbiddenException('Conta banida. Contacta o suporte.');
-      }
     }
 
     const activeTenantId = await this.defaultTenantId(user.accountId);
@@ -111,6 +104,7 @@ export class AuthService {
       orderBy: { createdAt: 'asc' },
     });
     if (!user) throw new UnauthorizedException('Não encontrámos esse email.');
+    await this.assertAccountNotBanned(user.accountId);
     if (user.emailVerifiedAt) {
       throw new BadRequestException('Este email já está verificado — inicia sessão.');
     }
@@ -199,6 +193,8 @@ export class AuthService {
     if (!current.accountId) {
       throw new ForbiddenException('Sem conta associada.');
     }
+    // sem isto, um token residual pós-ban renovava a sessão indefinidamente
+    await this.assertAccountNotBanned(current.accountId);
     const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
     if (!tenant || tenant.accountId !== current.accountId) {
       throw new ForbiddenException('Unidade não pertence à tua conta.');
@@ -206,6 +202,18 @@ export class AuthService {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: current.userId } });
     const tokens = await this.issueTokens(user, tenant.id);
     return { tenant, ...tokens };
+  }
+
+  /** Nenhuma emissão de sessão para contas banidas (login, verify-email, switch). */
+  private async assertAccountNotBanned(accountId: string | null) {
+    if (!accountId) return;
+    const account = await this.prisma.account.findUnique({
+      where: { id: accountId },
+      select: { status: true },
+    });
+    if (account?.status === 'BANNED') {
+      throw new ForbiddenException('Conta banida. Contacta o suporte.');
+    }
   }
 
   /** Unidade ativa por omissão de uma conta: a mais antiga (ou null). */

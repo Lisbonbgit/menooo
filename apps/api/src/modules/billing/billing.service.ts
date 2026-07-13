@@ -105,6 +105,21 @@ export class BillingService {
     return { url: session.url };
   }
 
+  /**
+   * Cancela uma subscrição no Stripe (usado ao excluir uma empresa, para o
+   * cartão do cliente não continuar a ser cobrado). Tolera subscrições já
+   * canceladas/inexistentes; qualquer outro erro propaga — quem chama decide.
+   */
+  async cancelSubscription(subscriptionId: string) {
+    if (!this.stripe) return;
+    try {
+      await this.stripe.subscriptions.cancel(subscriptionId);
+      this.logger.log(`subscrição Stripe cancelada: ${subscriptionId}`);
+    } catch (err) {
+      if ((err as Stripe.errors.StripeError)?.code !== 'resource_missing') throw err;
+    }
+  }
+
   /** Webhook do Stripe: valida a assinatura e processa os eventos de cobrança. */
   async handleWebhook(rawBody: Buffer, signature: string) {
     if (!this.stripe || !process.env.STRIPE_WEBHOOK_SECRET) {
@@ -127,7 +142,9 @@ export class BillingService {
         const s = event.data.object as Stripe.Checkout.Session;
         const accountId = s.metadata?.accountId;
         if (accountId) {
-          await this.prisma.account.update({
+          // updateMany: não rebenta (P2025→500→retries do Stripe) se a conta
+          // tiver sido excluída entre o checkout e o webhook
+          await this.prisma.account.updateMany({
             where: { id: accountId },
             data: {
               stripeCustomerId: (s.customer as string) ?? undefined,

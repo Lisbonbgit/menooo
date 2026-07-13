@@ -47,6 +47,7 @@ async function main() {
             email: 'dono@pizzaria-demo.pt',
             passwordHash: ownerPass,
             role: UserRole.OWNER,
+            emailVerifiedAt: new Date(), // demo entra sem passar pela verificação
           },
         },
       },

@@ -7,6 +7,7 @@ import {
 import { OrderStatus, TenantStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
+import { BillingService } from '../billing/billing.service';
 import { computeSubscription } from '../tenants/subscription.util';
 
 const TRIAL_DAYS = 7;
@@ -28,6 +29,7 @@ export class AdminService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly mail: MailService,
+    private readonly billing: BillingService,
   ) {}
 
   /** Números da plataforma para o topo do painel. */
@@ -383,6 +385,13 @@ export class AdminService {
     if (!account) throw new NotFoundException('Empresa não encontrada.');
     if (account.status !== 'BANNED') {
       throw new ConflictException('Banir a empresa primeiro.');
+    }
+
+    // cancela a cobrança recorrente ANTES de apagar — senão o Stripe continuava
+    // a cobrar o cartão de uma conta que já não existe. Se o Stripe falhar,
+    // a exclusão aborta (melhor um retry do que cobranças órfãs).
+    if (account.stripeSubscriptionId) {
+      await this.billing.cancelSubscription(account.stripeSubscriptionId);
     }
 
     await this.prisma.account.delete({ where: { id } });
