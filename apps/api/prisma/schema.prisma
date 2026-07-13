@@ -240,6 +240,11 @@ model User {
   verificationCodeExpiresAt DateTime?
   verificationAttempts      Int       @default(0)
 
+  // reposição de password ("esqueci-me") — código de 6 dígitos por email
+  passwordResetCodeHash  String?
+  passwordResetExpiresAt DateTime?
+  passwordResetAttempts  Int       @default(0)
+
   refreshTokens RefreshToken[]
 
   createdAt DateTime @default(now())

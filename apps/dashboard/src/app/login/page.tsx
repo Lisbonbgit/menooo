@@ -108,7 +108,12 @@ export default function LoginPage() {
             className="mb-4 w-full rounded-xl border border-line bg-white px-3.5 py-2.5 text-[14px] shadow-card outline-none transition-colors focus:border-brand"
           />
 
-          <label className="mb-1.5 block text-[13px] font-medium">Password</label>
+          <div className="mb-1.5 flex items-baseline justify-between">
+            <label className="block text-[13px] font-medium">Password</label>
+            <a href="/forgot" className="text-[12px] font-medium text-brand hover:underline">
+              Esqueci-me da password
+            </a>
+          </div>
           <input
             type="password"
             required

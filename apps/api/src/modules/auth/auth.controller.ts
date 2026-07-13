@@ -5,6 +5,7 @@ import { RegisterRestaurantDto } from './dto/register-restaurant.dto';
 import { LoginDto } from './dto/login.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { ResendCodeDto } from './dto/resend-code.dto';
+import { ForgotPasswordDto, ResetPasswordDto } from './dto/password-reset.dto';
 import { SwitchTenantDto } from './dto/switch-tenant.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -39,6 +40,20 @@ export class AuthController {
   @Post('resend-code')
   resendCode(@Body() dto: ResendCodeDto) {
     return this.auth.resendCode(dto.email);
+  }
+
+  /** Pede um código de reposição de password (resposta neutra: não revela emails). */
+  @Public()
+  @Post('forgot-password')
+  forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.auth.forgotPassword(dto.email);
+  }
+
+  /** Define uma password nova com o código recebido por email. */
+  @Public()
+  @Post('reset-password')
+  resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.auth.resetPassword(dto.email, dto.code, dto.newPassword);
   }
 
   @Get('me')

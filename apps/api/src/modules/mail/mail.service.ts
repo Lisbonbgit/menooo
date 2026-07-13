@@ -117,6 +117,20 @@ export class MailService {
     );
   }
 
+  /** 0b. Código de reposição de password ("esqueci-me"). */
+  async sendPasswordReset(to: string, name: string, code: string) {
+    await this.send(
+      to,
+      `Repor a tua password Menooo: ${code}`,
+      this.h('Repor a password') +
+        this.p(`Olá ${name}, usa este código para definires uma password nova:`) +
+        `<p style="margin:22px 0;text-align:center;"><span style="display:inline-block;background:#FAF6F0;border:1px solid #EBE1D3;border-radius:10px;padding:14px 26px;font-size:30px;font-weight:bold;letter-spacing:8px;color:#2B211A;font-family:Arial,Helvetica,sans-serif;">${code}</span></p>` +
+        this.p(
+          'O código é válido durante 20 minutos. Se não pediste esta reposição, ignora este email — a tua password mantém-se.',
+        ),
+    );
+  }
+
   /** 1. Boas-vindas, logo após o registo. */
   async sendWelcome(to: string, ownerName: string, restaurantName: string) {
     await this.send(

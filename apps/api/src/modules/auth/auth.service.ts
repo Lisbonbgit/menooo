@@ -185,6 +185,76 @@ export class AuthService {
     return { ok: true };
   }
 
+  /**
+   * "Esqueci-me da password": envia um código de 6 dígitos. A resposta é
+   * sempre neutra — não revela se o email existe na plataforma.
+   */
+  async forgotPassword(email: string) {
+    const user = await this.prisma.user.findFirst({
+      where: { email },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (!user) return { ok: true };
+
+    const sentRecently =
+      user.passwordResetExpiresAt &&
+      user.passwordResetExpiresAt.getTime() - Date.now() > CODE_TTL_MS - RESEND_COOLDOWN_MS;
+    if (sentRecently) {
+      throw new BadRequestException('Aguarda um momento antes de pedir um novo código.');
+    }
+
+    const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordResetCodeHash: await argon2.hash(code),
+        passwordResetExpiresAt: new Date(Date.now() + CODE_TTL_MS),
+        passwordResetAttempts: 0,
+      },
+    });
+    void this.mail.sendPasswordReset(user.email, user.name, code);
+    return { ok: true };
+  }
+
+  /** Define a password nova com o código; corta as sessões existentes. */
+  async resetPassword(email: string, code: string, newPassword: string) {
+    const user = await this.prisma.user.findFirst({
+      where: { email },
+      orderBy: { createdAt: 'asc' },
+    });
+    // mensagem única para qualquer falha — não revela emails nem estados
+    const invalid = () => new UnauthorizedException('Código inválido ou expirado.');
+    if (!user || !user.passwordResetCodeHash || !user.passwordResetExpiresAt) throw invalid();
+    if (user.passwordResetExpiresAt.getTime() < Date.now()) throw invalid();
+    if (user.passwordResetAttempts >= MAX_ATTEMPTS) throw invalid();
+
+    const ok = await argon2.verify(user.passwordResetCodeHash, code).catch(() => false);
+    if (!ok) {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { passwordResetAttempts: { increment: 1 } },
+      });
+      throw invalid();
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          passwordHash: await argon2.hash(newPassword),
+          passwordResetCodeHash: null,
+          passwordResetExpiresAt: null,
+          passwordResetAttempts: 0,
+          // quem repõe a password provou controlar o email
+          emailVerifiedAt: user.emailVerifiedAt ?? new Date(),
+        },
+      }),
+      // sessões antigas deixam de valer (se o email foi comprometido, corta tudo)
+      this.prisma.refreshToken.deleteMany({ where: { userId: user.id } }),
+    ]);
+    return { ok: true };
+  }
+
   /** Gera um código de 6 dígitos, guarda-o (hash) e envia-o por email. */
   private async issueAndSendCode(user: User) {
     const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
