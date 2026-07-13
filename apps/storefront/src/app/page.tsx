@@ -2,6 +2,10 @@ import { Flame, ArrowRight } from 'lucide-react';
 import { PrinterHero } from './_landing/PrinterHero';
 import { PhotoBand } from './_landing/PhotoBand';
 import { OrderFlow } from './_landing/OrderFlow';
+import { SocialProof } from './_landing/SocialProof';
+import { CostTable } from './_landing/CostTable';
+import { Faq } from './_landing/Faq';
+import { Contact } from './_landing/Contact';
 
 const DASHBOARD_URL = process.env.NEXT_PUBLIC_DASHBOARD_URL ?? 'http://187.124.4.163:8081';
 
@@ -220,6 +224,12 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* ---------- prova social ---------- */}
+      <SocialProof />
+
+      {/* ---------- comparação de custos ---------- */}
+      <CostTable />
+
       {/* ---------- preço ---------- */}
       <section className="mx-auto max-w-5xl px-6 py-20">
         <div className="mx-auto max-w-xl border border-ink/15 bg-white px-8 py-10 text-center">
@@ -252,6 +262,12 @@ export default function HomePage() {
           </a>
         </div>
       </section>
+
+      {/* ---------- FAQ ---------- */}
+      <Faq />
+
+      {/* ---------- contacto ---------- */}
+      <Contact />
 
       <footer className="border-t border-line">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-6 py-7 text-[12px] text-ink-mute">
