@@ -232,6 +232,30 @@ export default function SettingsPage() {
         />
       </section>
 
+      {/* pagamento online dos clientes — em breve */}
+      <section className="animate-fade-up mb-5 rounded-xl border border-line bg-white p-5 shadow-card">
+        <div className="flex items-start gap-3">
+          <span className="text-ink-mute">
+            <CreditCard size={17} />
+          </span>
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="font-display text-[16px] font-semibold leading-tight">
+                Pagamento online dos clientes
+              </h2>
+              <span className="rounded-full bg-brand-soft px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-brand-dark">
+                Brevemente
+              </span>
+            </div>
+            <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-soft">
+              Em breve os teus clientes vão poder pagar por <strong>MB Way ou cartão</strong>{' '}
+              diretamente no checkout. Por agora, recebes na <strong>entrega ou no levantamento</strong>{' '}
+              — cada euro é teu, sem intermediários.
+            </p>
+          </div>
+        </div>
+      </section>
+
       {/* subscrição */}
       {tenant.data && <BillingCard tenant={tenant.data} />}
 
