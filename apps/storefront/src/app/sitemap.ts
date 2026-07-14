@@ -1,5 +1,9 @@
 import type { MetadataRoute } from 'next';
 
+// renderizar em runtime, não no build: no build a API ainda não está a correr,
+// logo a lista de lojas viria vazia. Em runtime a storefront alcança a API.
+export const dynamic = 'force-dynamic';
+
 const SITE_URL = process.env.NEXT_PUBLIC_STORE_URL ?? 'https://menooo.com';
 const API = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001') + '/api';
 
