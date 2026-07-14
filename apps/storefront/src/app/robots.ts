@@ -7,8 +7,8 @@ export default function robots(): MetadataRoute.Robots {
     rules: {
       userAgent: '*',
       allow: '/',
-      // páginas transacionais/privadas não interessam aos motores
-      disallow: ['/*/checkout'],
+      // NÃO fazer Disallow do /checkout: bloquear o crawl impediria o motor de
+      // ler o `noindex` (robots.ts de [slug]/checkout) e des-indexar de facto.
     },
     sitemap: `${SITE_URL}/sitemap.xml`,
   };
