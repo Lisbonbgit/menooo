@@ -10,9 +10,9 @@ body {
   @apply bg-paper text-ink antialiased font-sans;
 }
 
-html {
-  scroll-behavior: smooth;
-}
+/* NÃO usar `scroll-behavior: smooth` no scroller raiz: no Chromium quebra o
+   scroll por teclado (PageDown/End/setas) — a roda do rato usa outro caminho e
+   por isso parecia funcionar. Os saltos de âncora ficam instantâneos. */
 
 .stagger > * {
   animation: fadeUp 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;

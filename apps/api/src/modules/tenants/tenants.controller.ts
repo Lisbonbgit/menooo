@@ -16,6 +16,13 @@ import { AccountId } from '../../common/decorators/account-id.decorator';
 export class TenantsController {
   constructor(private readonly tenants: TenantsService) {}
 
+  /** Lista de lojas visíveis — usada pelo sitemap. */
+  @Public()
+  @Get('public/stores')
+  listStores() {
+    return this.tenants.listPublicStores();
+  }
+
   /** Loja pública — usada pelo storefront. */
   @Public()
   @Get('public/stores/:slug')

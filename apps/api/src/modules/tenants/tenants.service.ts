@@ -50,6 +50,18 @@ export class TenantsService {
     };
   }
 
+  /** Lojas publicamente visíveis (para o sitemap): slug + data de atualização. */
+  async listPublicStores() {
+    const tenants = await this.prisma.tenant.findMany({
+      where: { status: 'ACTIVE' },
+      include: { account: true },
+      orderBy: { updatedAt: 'desc' },
+    });
+    return tenants
+      .filter((t) => isSubscriptionUsable(t.account))
+      .map((t) => ({ slug: t.slug, updatedAt: t.updatedAt }));
+  }
+
   /** Indica se a loja aceita encomendas neste momento (usado no checkout). */
   async isAcceptingOrders(slug: string): Promise<boolean> {
     const tenant = await this.prisma.tenant.findUnique({
