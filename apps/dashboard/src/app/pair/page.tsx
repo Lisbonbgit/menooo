@@ -34,6 +34,12 @@ export default function PairPage() {
     }
   }
 
+  function ownerLogin() {
+    // este browser deixa de ser tratado como tablet de cozinha
+    setKitchenDevice(false);
+    router.replace('/login');
+  }
+
   return (
     <main className="flex min-h-screen items-center justify-center bg-espresso px-4">
       <form
@@ -64,6 +70,7 @@ export default function PairPage() {
         <input
           autoFocus
           required
+          maxLength={14}
           value={code}
           onChange={(e) => setCode(e.target.value.toUpperCase())}
           placeholder="XXXX-XXXX-XXXX"
@@ -73,7 +80,7 @@ export default function PairPage() {
 
         <button
           type="submit"
-          disabled={loading || code.length < 12}
+          disabled={loading || code.replace(/[^A-Z2-7]/g, '').length < 12}
           className="w-full rounded-xl bg-brand py-3 text-[14.5px] font-semibold text-white shadow-card transition-colors hover:bg-brand-dark disabled:opacity-60"
         >
           {loading ? 'A emparelhar…' : 'Emparelhar'}
@@ -82,6 +89,14 @@ export default function PairPage() {
         <p className="mt-5 text-center text-[12px] text-ink-mute">
           O código é de uso único e expira em 10 minutos.
         </p>
+
+        <button
+          type="button"
+          onClick={ownerLogin}
+          className="mt-3 w-full text-center text-[12.5px] font-medium text-ink-soft underline-offset-2 hover:underline"
+        >
+          Não é um tablet de cozinha? Entrar como dono
+        </button>
       </form>
     </main>
   );
