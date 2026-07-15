@@ -18,6 +18,8 @@ import {
   Send,
   Inbox,
   Clock,
+  AlertTriangle,
+  RotateCw,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useLiveOrders, useUpdateOrderStatus } from '@/lib/orders-hooks';
@@ -76,6 +78,12 @@ function elapsed(iso: string) {
   return `${Math.floor(min / 60)}h${String(min % 60).padStart(2, '0')}`;
 }
 
+// agendada para daqui a mais de 15 min: não auto-imprimir já (imprimia-se um
+// talão que se perdia no balcão horas antes da hora)
+function isFutureScheduled(order: Order): boolean {
+  return !!order.scheduledFor && new Date(order.scheduledFor).getTime() > Date.now() + 15 * 60_000;
+}
+
 function nextActions(
   order: Order,
 ): { label: string; status: OrderStatus; icon: React.ReactNode; danger?: boolean }[] {
@@ -120,8 +128,14 @@ export default function OrdersPage() {
   const print = useCallback(
     async (order: Order) => {
       try {
-        await printOrder(order, storeName);
+        const via = await printOrder(order, storeName);
+        if (via === 'unconfigured') {
+          toast.error('Configura o IP da impressora nas definições de impressão.');
+          return;
+        }
+        usePrintStore.getState().removePendingPrint(order.id);
       } catch (e: any) {
+        usePrintStore.getState().addPendingPrint(order.id);
         toast.error(e?.message ?? 'Erro ao imprimir');
       }
     },
@@ -130,11 +144,16 @@ export default function OrdersPage() {
 
   const onNewOrder = useCallback(
     (order: Order) => {
-      if (usePrintStore.getState().autoPrint) {
-        printOrder(order, storeName).catch(() =>
-          toast.error(`Falha a imprimir #${order.number}`),
-        );
-      }
+      if (!usePrintStore.getState().autoPrint) return;
+      if (isFutureScheduled(order)) return; // agendada: imprime-se perto da hora, à mão
+      printOrder(order, storeName)
+        .then((via) => {
+          if (via === 'unconfigured') usePrintStore.getState().addPendingPrint(order.id);
+        })
+        .catch(() => {
+          usePrintStore.getState().addPendingPrint(order.id);
+          toast.error(`Falha a imprimir #${order.number}`);
+        });
     },
     [storeName],
   );
@@ -152,6 +171,20 @@ export default function OrdersPage() {
   }
 
   const finished = orders.filter((o) => FINISHED.includes(o.status));
+
+  const pendingPrints = usePrintStore((s) => s.pendingPrints);
+  const pendingOrders = orders.filter((o) => pendingPrints.includes(o.id));
+  const [retrying, setRetrying] = useState(false);
+
+  async function retryPending() {
+    setRetrying(true);
+    for (const o of pendingOrders) {
+      // sequencial de propósito: a térmica só aceita uma ligação de cada vez
+      // eslint-disable-next-line no-await-in-loop
+      await print(o);
+    }
+    setRetrying(false);
+  }
 
   return (
     <AppShell
@@ -181,6 +214,27 @@ export default function OrdersPage() {
         </>
       }
     >
+      {pendingOrders.length > 0 && (
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+          <p className="flex items-center gap-2 text-[13px] text-red-800">
+            <AlertTriangle size={15} />
+            <strong>
+              {pendingOrders.length}{' '}
+              {pendingOrders.length === 1 ? 'talão por imprimir' : 'talões por imprimir'}
+            </strong>
+            — verifica a impressora (ligação, IP) e tenta de novo.
+          </p>
+          <button
+            onClick={retryPending}
+            disabled={retrying}
+            className="flex items-center gap-1.5 rounded-xl bg-red-600 px-3.5 py-2 text-[12.5px] font-semibold text-white transition-colors hover:bg-red-700 disabled:opacity-60"
+          >
+            <RotateCw size={13} className={retrying ? 'animate-spin' : ''} />
+            {retrying ? 'A imprimir…' : 'Tentar de novo'}
+          </button>
+        </div>
+      )}
+
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {COLUMNS.map((col) => {
           const list = orders.filter((o) => col.statuses.includes(o.status));
@@ -203,7 +257,7 @@ export default function OrdersPage() {
                   </div>
                 )}
                 {list.map((o) => (
-                  <OrderCard key={o.id} order={o} onAdvance={advance} onPrint={print} />
+                  <OrderCard key={o.id} order={o} pending={pendingPrints.includes(o.id)} onAdvance={advance} onPrint={print} />
                 ))}
               </div>
             </section>
@@ -225,19 +279,28 @@ export default function OrdersPage() {
                 <span className="font-medium">
                   #{o.number} · {o.customerName}
                 </span>
-                <span
-                  className={clsx(
-                    'rounded-full px-2 py-0.5 text-[11px] font-semibold',
-                    o.status === 'COMPLETED'
-                      ? 'bg-green-100 text-green-800'
-                      : 'bg-red-100 text-red-700',
-                  )}
-                >
-                  {o.status === 'COMPLETED'
-                    ? 'Concluído'
-                    : o.status === 'REJECTED'
-                      ? 'Recusado'
-                      : 'Cancelado'}
+                <span className="flex items-center gap-2">
+                  <button
+                    onClick={() => print(o)}
+                    title="Reimprimir talão"
+                    className="rounded-lg border border-line p-1.5 text-ink-mute transition-colors hover:border-brand/40 hover:text-brand-dark"
+                  >
+                    <Printer size={13} />
+                  </button>
+                  <span
+                    className={clsx(
+                      'rounded-full px-2 py-0.5 text-[11px] font-semibold',
+                      o.status === 'COMPLETED'
+                        ? 'bg-green-100 text-green-800'
+                        : 'bg-red-100 text-red-700',
+                    )}
+                  >
+                    {o.status === 'COMPLETED'
+                      ? 'Concluído'
+                      : o.status === 'REJECTED'
+                        ? 'Recusado'
+                        : 'Cancelado'}
+                  </span>
                 </span>
               </li>
             ))}
@@ -254,10 +317,12 @@ export default function OrdersPage() {
 
 function OrderCard({
   order,
+  pending,
   onAdvance,
   onPrint,
 }: {
   order: Order;
+  pending: boolean;
   onAdvance: (o: Order, s: OrderStatus) => void;
   onPrint: (o: Order) => void;
 }) {
@@ -267,6 +332,7 @@ function OrderCard({
       className={clsx(
         'rounded-xl border bg-white p-4 shadow-card transition-shadow hover:shadow-lift',
         isNew ? 'border-brand/50 animate-ring-new' : 'border-line',
+        pending && 'border-red-300',
       )}
     >
       <div className="mb-2.5 flex items-start justify-between">
@@ -286,6 +352,12 @@ function OrderCard({
           <Printer size={14} />
         </button>
       </div>
+
+      {pending && (
+        <p className="mb-2 inline-flex items-center gap-1 rounded-md bg-red-50 px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-red-700">
+          por imprimir
+        </p>
+      )}
 
       <p className="text-[13.5px] font-medium">{order.customerName}</p>
       <p className="text-[11.5px] text-ink-mute">
