@@ -387,11 +387,16 @@ export class AuthService {
       throw invalid();
     }
 
-    await this.assertAccountNotBanned(tenant.accountId);
+    // conta banida: recusa com o MESMO erro neutro (não revelar que o código era válido)
+    const account = await this.prisma.account.findUnique({
+      where: { id: tenant.accountId },
+      select: { status: true },
+    });
+    if (account?.status === 'BANNED') throw invalid();
 
-    // uso-único: consome o código no primeiro sucesso
-    await this.prisma.tenant.update({
-      where: { id: tenant.id },
+    // uso-único ATÓMICO: só um pedido concorrente consegue consumir o código
+    const consumed = await this.prisma.tenant.updateMany({
+      where: { id: tenant.id, kitchenPairId: parsed.id },
       data: {
         kitchenPairId: null,
         kitchenPairHash: null,
@@ -400,25 +405,38 @@ export class AuthService {
         kitchenPairedAt: new Date(),
       },
     });
+    if (consumed.count === 0) throw invalid();
 
     // um utilizador KITCHEN por unidade — reutiliza se já existir
     let user = await this.prisma.user.findFirst({
       where: { kitchenTenantId: tenant.id, role: UserRole.KITCHEN },
     });
     if (!user) {
-      user = await this.prisma.user.create({
-        data: {
-          accountId: tenant.accountId,
-          // email sintético único por unidade; nunca colide com emails reais
-          email: `kitchen-${tenant.id}@menooo.local`,
-          // password aleatória não-conhecível — este utilizador não faz login por password
-          passwordHash: await argon2.hash(randomBytes(32).toString('hex')),
-          name: 'Cozinha',
-          role: UserRole.KITCHEN,
-          kitchenTenantId: tenant.id,
-          emailVerifiedAt: new Date(),
-        },
-      });
+      try {
+        user = await this.prisma.user.create({
+          data: {
+            accountId: tenant.accountId,
+            // email sintético único por unidade; nunca colide com emails reais
+            email: `kitchen-${tenant.id}@menooo.local`,
+            // password aleatória não-conhecível — este utilizador não faz login por password
+            passwordHash: await argon2.hash(randomBytes(32).toString('hex')),
+            name: 'Cozinha',
+            role: UserRole.KITCHEN,
+            kitchenTenantId: tenant.id,
+            emailVerifiedAt: new Date(),
+          },
+        });
+      } catch (e) {
+        // corrida na 1ª criação: outro pedido criou-o primeiro — reutiliza
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+          user = await this.prisma.user.findFirst({
+            where: { kitchenTenantId: tenant.id, role: UserRole.KITCHEN },
+          });
+          if (!user) throw invalid();
+        } else {
+          throw e;
+        }
+      }
     }
 
     const tokens = await this.issueTokens(user, tenant.id);
