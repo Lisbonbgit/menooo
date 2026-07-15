@@ -112,6 +112,14 @@ async function main() {
     check(`${method} ${path} → ${expected}`, r.status === expected, `got ${r.status}`);
   }
 
+  console.log('— payload mínimo de /tenants/me para KITCHEN');
+  const kMe = await req('GET', '/tenants/me', { token: kToken });
+  check('KITCHEN /tenants/me tem name', typeof kMe.json?.name === 'string');
+  check('KITCHEN /tenants/me SEM subscription', !('subscription' in (kMe.json ?? {})));
+  check('KITCHEN /tenants/me SEM stripeSubscriptionId', !('stripeSubscriptionId' in (kMe.json ?? {})));
+  const oMe = await req('GET', '/tenants/me', { token: ownerToken });
+  check('OWNER /tenants/me mantém subscription', 'subscription' in (oMe.json ?? {}));
+
   console.log('— KITCHEN avança um pedido (fluxo principal da cozinha)');
   // Nota: GET /public/stores/:slug devolve só metadados da loja (sem produtos,
   // mas com minOrderValue); os produtos estão em GET /public/stores/:slug/menu

@@ -10,6 +10,8 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { AccountId } from '../../common/decorators/account-id.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { AuthenticatedUser } from '../../common/types/authenticated-user';
 
 @ApiTags('tenants')
 @Controller()
@@ -36,8 +38,8 @@ export class TenantsController {
   @UseGuards(RolesGuard)
   @Roles(UserRole.OWNER, UserRole.STAFF, UserRole.KITCHEN)
   @Get('tenants/me')
-  getMine(@TenantId() tenantId: string) {
-    return this.tenants.getMine(tenantId);
+  getMine(@TenantId() tenantId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.tenants.getMine(tenantId, user.role === UserRole.KITCHEN);
   }
 
   /** Unidades da conta do dono (para o seletor de loja). */

@@ -80,12 +80,17 @@ export class TenantsService {
   }
 
   /** Dados completos do restaurante autenticado (inclui estado da subscrição da conta). */
-  async getMine(tenantId: string) {
+  async getMine(tenantId: string, minimal = false) {
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
       include: { openingHours: { orderBy: { weekday: 'asc' } }, account: true },
     });
     if (!tenant) throw new NotFoundException('Restaurante não encontrado.');
+    // payload mínimo para a cozinha: nome para o talão e pouco mais —
+    // sem subscrição/estado, os banners de dono nem sequer têm dados para disparar
+    if (minimal) {
+      return { id: tenant.id, name: tenant.name, slug: tenant.slug, isOpen: tenant.isOpen };
+    }
     const { account, ...rest } = tenant;
     return {
       ...rest,
