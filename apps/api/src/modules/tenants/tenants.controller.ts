@@ -34,7 +34,7 @@ export class TenantsController {
 
   @ApiBearerAuth()
   @UseGuards(RolesGuard)
-  @Roles(UserRole.OWNER, UserRole.STAFF)
+  @Roles(UserRole.OWNER, UserRole.STAFF, UserRole.KITCHEN)
   @Get('tenants/me')
   getMine(@TenantId() tenantId: string) {
     return this.tenants.getMine(tenantId);
@@ -68,7 +68,7 @@ export class TenantsController {
 
   @ApiBearerAuth()
   @UseGuards(RolesGuard)
-  @Roles(UserRole.OWNER, UserRole.STAFF)
+  @Roles(UserRole.OWNER, UserRole.STAFF, UserRole.KITCHEN)
   @Get('tenants/me/hours')
   getHours(@TenantId() tenantId: string) {
     return this.tenants.getMyHours(tenantId);

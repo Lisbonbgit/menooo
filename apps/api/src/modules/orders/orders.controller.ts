@@ -15,6 +15,10 @@ import { TenantId } from '../../common/decorators/tenant-id.decorator';
 export class OrdersController {
   constructor(private readonly orders: OrdersService) {}
 
+  // KITCHEN (tablet de cozinha) só vê e avança pedidos. O @Roles no método
+  // SOBREPÕE o da classe (getAllAndOverride) — /orders/summary fica de fora
+  // de propósito (receita é só para OWNER/STAFF).
+  @Roles(UserRole.OWNER, UserRole.STAFF, UserRole.KITCHEN)
   @Get()
   list(@TenantId() tenantId: string) {
     return this.orders.listForTenant(tenantId);
@@ -25,11 +29,13 @@ export class OrdersController {
     return this.orders.summaryForTenant(tenantId);
   }
 
+  @Roles(UserRole.OWNER, UserRole.STAFF, UserRole.KITCHEN)
   @Get(':id')
   get(@TenantId() tenantId: string, @Param('id') id: string) {
     return this.orders.getForTenant(tenantId, id);
   }
 
+  @Roles(UserRole.OWNER, UserRole.STAFF, UserRole.KITCHEN)
   @Patch(':id/status')
   updateStatus(
     @TenantId() tenantId: string,
