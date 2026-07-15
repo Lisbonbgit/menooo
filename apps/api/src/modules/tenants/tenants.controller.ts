@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import { TenantsService } from './tenants.service';
@@ -80,5 +80,32 @@ export class TenantsController {
   @Put('tenants/me/hours')
   setHours(@TenantId() tenantId: string, @Body() dto: SetOpeningHoursDto) {
     return this.tenants.setMyHours(tenantId, dto.hours);
+  }
+
+  /** Gera o código de emparelhamento do tablet de cozinha (uso-único, ~10 min). */
+  @ApiBearerAuth()
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.OWNER)
+  @Post('tenants/me/kitchen/pair-code')
+  kitchenPairCode(@TenantId() tenantId: string) {
+    return this.tenants.generateKitchenPairCode(tenantId);
+  }
+
+  /** Estado do emparelhamento da cozinha. */
+  @ApiBearerAuth()
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.OWNER)
+  @Get('tenants/me/kitchen')
+  kitchenStatus(@TenantId() tenantId: string) {
+    return this.tenants.kitchenStatus(tenantId);
+  }
+
+  /** Desemparelha o tablet de cozinha (revoga as sessões). */
+  @ApiBearerAuth()
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.OWNER)
+  @Delete('tenants/me/kitchen')
+  kitchenUnpair(@TenantId() tenantId: string) {
+    return this.tenants.unpairKitchen(tenantId);
   }
 }

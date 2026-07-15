@@ -1,5 +1,9 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import * as argon2 from 'argon2';
+import { UserRole, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { OrdersGateway } from '../orders/orders.gateway';
+import { generatePairCode, PAIR_CODE_TTL_MS } from '../../common/kitchen-pair.util';
 
 /** Luminância relativa (WCAG) de uma cor #rrggbb — 0 = preto, 1 = branco. */
 function relativeLuminance(hex: string): number {
@@ -18,7 +22,10 @@ import { isReservedSlug } from '../../common/reserved-slugs';
 
 @Injectable()
 export class TenantsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly ordersGateway: OrdersGateway,
+  ) {}
 
   /** Dados públicos da loja (storefront) — só restaurantes ativos. */
   async getPublicBySlug(slug: string) {
@@ -171,6 +178,77 @@ export class TenantsService {
       }),
     ]);
     return this.getMyHours(tenantId);
+  }
+
+  /** Gera um código de emparelhamento de uso-único para o tablet de cozinha. */
+  async generateKitchenPairCode(tenantId: string) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const { id, secret, display } = generatePairCode();
+      const expiresAt = new Date(Date.now() + PAIR_CODE_TTL_MS);
+      try {
+        await this.prisma.tenant.update({
+          where: { id: tenantId },
+          data: {
+            kitchenPairId: id,
+            kitchenPairHash: await argon2.hash(secret),
+            kitchenPairExpiresAt: expiresAt,
+            kitchenPairAttempts: 0,
+          },
+        });
+        return { code: display, expiresAt: expiresAt.toISOString() };
+      } catch (e) {
+        // colisão do id público (unique) — tenta outro
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') continue;
+        throw e;
+      }
+    }
+    throw new Error('Não foi possível gerar o código. Tenta novamente.');
+  }
+
+  /** Estado do emparelhamento da cozinha desta unidade. */
+  async kitchenStatus(tenantId: string) {
+    const tenant = await this.prisma.tenant.findUniqueOrThrow({ where: { id: tenantId } });
+    const kitchenUser = await this.prisma.user.findFirst({
+      where: { kitchenTenantId: tenantId, role: UserRole.KITCHEN },
+    });
+    const activeSessions = kitchenUser
+      ? await this.prisma.refreshToken.count({
+          where: { userId: kitchenUser.id, revokedAt: null, expiresAt: { gt: new Date() } },
+        })
+      : 0;
+    return {
+      paired: activeSessions > 0,
+      pairedAt: tenant.kitchenPairedAt?.toISOString() ?? null,
+      activeSessions,
+      pendingCode:
+        !!tenant.kitchenPairHash &&
+        !!tenant.kitchenPairExpiresAt &&
+        tenant.kitchenPairExpiresAt.getTime() > Date.now(),
+    };
+  }
+
+  /** Desemparelha a cozinha: revoga sessões, limpa código pendente, desliga sockets. */
+  async unpairKitchen(tenantId: string) {
+    const kitchenUsers = await this.prisma.user.findMany({
+      where: { kitchenTenantId: tenantId, role: UserRole.KITCHEN },
+      select: { id: true },
+    });
+    await this.prisma.$transaction([
+      this.prisma.refreshToken.deleteMany({
+        where: { userId: { in: kitchenUsers.map((u) => u.id) } },
+      }),
+      this.prisma.tenant.update({
+        where: { id: tenantId },
+        data: {
+          kitchenPairId: null,
+          kitchenPairHash: null,
+          kitchenPairExpiresAt: null,
+          kitchenPairAttempts: 0,
+        },
+      }),
+    ]);
+    await this.ordersGateway.disconnectKitchen(tenantId);
+    return { ok: true };
   }
 
   // --------------------------------------------------------------------------
