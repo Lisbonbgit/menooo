@@ -13,6 +13,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { AuthenticatedUser } from '../../common/types/authenticated-user';
 import { isReservedSlug } from '../../common/reserved-slugs';
+import { normalizePairCode, splitPairCode } from '../../common/kitchen-pair.util';
 import { RegisterRestaurantDto } from './dto/register-restaurant.dto';
 import { LoginDto } from './dto/login.dto';
 
@@ -359,6 +360,73 @@ export class AuthService {
       });
     }
     return { ok: true };
+  }
+
+  /**
+   * Emparelha um tablet de cozinha com um código de uso-único. Resposta NEUTRA
+   * para qualquer falha — não revela se o código existe, expirou ou está errado.
+   */
+  async kitchenPair(rawCode: string) {
+    const invalid = () => new UnauthorizedException('Código inválido ou expirado.');
+    const parsed = splitPairCode(normalizePairCode(rawCode));
+    if (!parsed) throw invalid();
+
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { kitchenPairId: parsed.id },
+    });
+    if (!tenant || !tenant.kitchenPairHash || !tenant.kitchenPairExpiresAt) throw invalid();
+    if (tenant.kitchenPairExpiresAt.getTime() < Date.now()) throw invalid();
+    if (tenant.kitchenPairAttempts >= MAX_ATTEMPTS) throw invalid();
+
+    const ok = await argon2.verify(tenant.kitchenPairHash, parsed.secret).catch(() => false);
+    if (!ok) {
+      await this.prisma.tenant.update({
+        where: { id: tenant.id },
+        data: { kitchenPairAttempts: { increment: 1 } },
+      });
+      throw invalid();
+    }
+
+    await this.assertAccountNotBanned(tenant.accountId);
+
+    // uso-único: consome o código no primeiro sucesso
+    await this.prisma.tenant.update({
+      where: { id: tenant.id },
+      data: {
+        kitchenPairId: null,
+        kitchenPairHash: null,
+        kitchenPairExpiresAt: null,
+        kitchenPairAttempts: 0,
+        kitchenPairedAt: new Date(),
+      },
+    });
+
+    // um utilizador KITCHEN por unidade — reutiliza se já existir
+    let user = await this.prisma.user.findFirst({
+      where: { kitchenTenantId: tenant.id, role: UserRole.KITCHEN },
+    });
+    if (!user) {
+      user = await this.prisma.user.create({
+        data: {
+          accountId: tenant.accountId,
+          // email sintético único por unidade; nunca colide com emails reais
+          email: `kitchen-${tenant.id}@menooo.local`,
+          // password aleatória não-conhecível — este utilizador não faz login por password
+          passwordHash: await argon2.hash(randomBytes(32).toString('hex')),
+          name: 'Cozinha',
+          role: UserRole.KITCHEN,
+          kitchenTenantId: tenant.id,
+          emailVerifiedAt: new Date(),
+        },
+      });
+    }
+
+    const tokens = await this.issueTokens(user, tenant.id);
+    return {
+      tenant: { id: tenant.id, name: tenant.name, slug: tenant.slug },
+      user: this.sanitizeUser(user),
+      ...tokens,
+    };
   }
 
   /** Nenhuma emissão de sessão para contas banidas (login, verify-email, switch). */

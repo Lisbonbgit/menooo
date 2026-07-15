@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { RegisterRestaurantDto } from './dto/register-restaurant.dto';
 import { LoginDto } from './dto/login.dto';
@@ -9,6 +10,7 @@ import { ResendCodeDto } from './dto/resend-code.dto';
 import { ForgotPasswordDto, ResetPasswordDto } from './dto/password-reset.dto';
 import { SwitchTenantDto } from './dto/switch-tenant.dto';
 import { RefreshDto, LogoutDto } from './dto/refresh.dto';
+import { KitchenPairDto } from './dto/kitchen-pair.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../../common/types/authenticated-user';
@@ -72,6 +74,14 @@ export class AuthController {
   @Post('logout')
   logout(@Body() dto: LogoutDto) {
     return this.auth.logout(dto.refreshToken);
+  }
+
+  /** Emparelha o tablet de cozinha com um código de uso-único (throttle dedicado). */
+  @Public()
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @Post('kitchen/pair')
+  kitchenPair(@Body() dto: KitchenPairDto) {
+    return this.auth.kitchenPair(dto.code);
   }
 
   @Get('me')

@@ -11,6 +11,9 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
 
+  // atrás do Caddy: o throttling por IP precisa do IP real (X-Forwarded-For)
+  app.set('trust proxy', 1);
+
   // CORP cross-origin: as imagens são servidas em api.menooo.com e mostradas
   // na loja (menooo.com) — de outra forma o browser bloqueava-as.
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
