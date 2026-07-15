@@ -80,9 +80,12 @@ api.interceptors.response.use(
     }
 
     if (status === 401 && typeof window !== 'undefined') {
-      useAuthStore.getState().logout();
-      if (window.location.pathname !== '/login') {
-        window.location.href = '/login';
+      const store = useAuthStore.getState();
+      // tablet de cozinha sem sessão volta ao emparelhamento, não ao login de email
+      const dest = store.kitchenDevice ? '/pair' : '/login';
+      store.logout();
+      if (window.location.pathname !== dest) {
+        window.location.href = dest;
       }
     }
     return Promise.reject(error);
