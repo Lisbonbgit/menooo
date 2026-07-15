@@ -61,7 +61,7 @@ export default function RegisterPage() {
         return;
       }
       // fallback (caso a verificação esteja desligada)
-      setAuth(data.accessToken, data.user);
+      setAuth(data.accessToken, data.refreshToken, data.user);
       toast.success('Loja criada — bem-vindo ao Menooo');
       router.replace('/overview');
     } catch (err: any) {

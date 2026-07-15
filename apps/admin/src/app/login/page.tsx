@@ -23,7 +23,7 @@ export default function LoginPage() {
         toast.error('Esta área é só para administradores da plataforma.');
         return;
       }
-      setAuth(data.accessToken, data.user.name);
+      setAuth(data.accessToken, data.refreshToken, data.user.name);
       router.replace('/tenants');
     } catch {
       toast.error('Credenciais inválidas');

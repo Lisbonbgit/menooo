@@ -26,7 +26,7 @@ const STATUS_LABEL: Record<Unit['status'], string> = {
 /** Seletor de unidade (loja) + adicionar nova unidade à conta do dono. */
 export function TenantSwitcher({ activeId, dropUp = true }: { activeId?: string; dropUp?: boolean }) {
   const qc = useQueryClient();
-  const { token, setToken } = useAuthStore();
+  const { token, setSession } = useAuthStore();
   const [open, setOpen] = useState(false);
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -47,8 +47,10 @@ export function TenantSwitcher({ activeId, dropUp = true }: { activeId?: string;
     }
     setBusy(true);
     try {
-      const { data } = await api.post<{ accessToken: string }>('/auth/switch', { tenantId: id });
-      setToken(data.accessToken);
+      const { data } = await api.post<{ accessToken: string; refreshToken: string }>('/auth/switch', {
+        tenantId: id,
+      });
+      setSession(data.accessToken, data.refreshToken);
       await qc.invalidateQueries();
       setOpen(false);
       toast.success('Unidade trocada');

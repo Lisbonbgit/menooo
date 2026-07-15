@@ -7,6 +7,7 @@ import { VerifyEmailDto } from './dto/verify-email.dto';
 import { ResendCodeDto } from './dto/resend-code.dto';
 import { ForgotPasswordDto, ResetPasswordDto } from './dto/password-reset.dto';
 import { SwitchTenantDto } from './dto/switch-tenant.dto';
+import { RefreshDto, LogoutDto } from './dto/refresh.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../../common/types/authenticated-user';
@@ -54,6 +55,20 @@ export class AuthController {
   @Post('reset-password')
   resetPassword(@Body() dto: ResetPasswordDto) {
     return this.auth.resetPassword(dto.email, dto.code, dto.newPassword);
+  }
+
+  /** Renova a sessão a partir do refresh token (funciona com o access token já expirado). */
+  @Public()
+  @Post('refresh')
+  refresh(@Body() dto: RefreshDto) {
+    return this.auth.refresh(dto.refreshToken, dto.tenantId);
+  }
+
+  /** Termina a sessão: revoga o refresh token. */
+  @Public()
+  @Post('logout')
+  logout(@Body() dto: LogoutDto) {
+    return this.auth.logout(dto.refreshToken);
   }
 
   @Get('me')

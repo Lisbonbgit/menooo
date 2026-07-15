@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth-store';
+import { useAuthHydrated } from '@/lib/use-hydrated';
 import { TenantSwitcher } from '@/components/TenantSwitcher';
 
 const NAV = [
@@ -54,12 +55,14 @@ export function AppShell({
   const pathname = usePathname();
   const router = useRouter();
   const { token, logout } = useAuthStore();
+  const hydrated = useAuthHydrated();
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
+    if (!hydrated) return; // espera o persist restaurar o token antes de decidir
     if (!token) router.replace('/login');
     else setReady(true);
-  }, [token, router]);
+  }, [hydrated, token, router]);
 
   const tenant = useQuery({
     queryKey: ['tenant-me'],

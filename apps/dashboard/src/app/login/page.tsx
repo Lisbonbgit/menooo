@@ -24,7 +24,7 @@ export default function LoginPage() {
         router.replace(`/verify?email=${encodeURIComponent(email)}`);
         return;
       }
-      setAuth(data.accessToken, data.user);
+      setAuth(data.accessToken, data.refreshToken, data.user);
       toast.success('Sessão iniciada');
       router.replace('/overview');
     } catch {

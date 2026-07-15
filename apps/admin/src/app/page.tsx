@@ -3,14 +3,17 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/lib/auth-store';
+import { useAuthHydrated } from '@/lib/use-hydrated';
 
 export default function HomePage() {
   const router = useRouter();
   const token = useAuthStore((s) => s.token);
+  const hydrated = useAuthHydrated();
 
   useEffect(() => {
+    if (!hydrated) return; // espera o persist restaurar o token antes de decidir
     router.replace(token ? '/tenants' : '/login');
-  }, [token, router]);
+  }, [hydrated, token, router]);
 
   return <main className="flex min-h-screen items-center justify-center text-gray-400">…</main>;
 }

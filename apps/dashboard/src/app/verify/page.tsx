@@ -24,7 +24,7 @@ function VerifyInner() {
     setLoading(true);
     try {
       const { data } = await api.post('/auth/verify-email', { email, code });
-      setAuth(data.accessToken, data.user);
+      setAuth(data.accessToken, data.refreshToken, data.user);
       toast.success('Email confirmado — bem-vindo ao Menooo');
       router.replace('/overview');
     } catch (err: any) {

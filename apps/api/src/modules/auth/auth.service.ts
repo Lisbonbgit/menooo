@@ -8,7 +8,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { Prisma, User, UserRole } from '@prisma/client';
 import * as argon2 from 'argon2';
-import { randomInt } from 'crypto';
+import { randomBytes, randomInt } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { AuthenticatedUser } from '../../common/types/authenticated-user';
@@ -20,6 +20,15 @@ import { LoginDto } from './dto/login.dto';
 const CODE_TTL_MS = 20 * 60 * 1000; // validade do código
 const MAX_ATTEMPTS = 5; // tentativas por código antes de exigir novo
 const RESEND_COOLDOWN_MS = 60 * 1000; // intervalo mínimo entre reenvios
+
+/** '7d' | '12h' | '15m' | '30s' → ms. Default 7 dias se não reconhecer. */
+function parseDurationMs(value: string): number {
+  const m = /^(\d+)\s*([smhd])$/.exec(value.trim());
+  if (!m) return 7 * 24 * 60 * 60 * 1000;
+  const n = Number(m[1]);
+  const mult = m[2] === 's' ? 1_000 : m[2] === 'm' ? 60_000 : m[2] === 'h' ? 3_600_000 : 86_400_000;
+  return n * mult;
+}
 
 @Injectable()
 export class AuthService {
@@ -293,6 +302,50 @@ export class AuthService {
     return { tenant, ...tokens };
   }
 
+  /**
+   * Renova a sessão a partir de um refresh token válido. RODA o token (o antigo
+   * fica revogado e é emitido um novo par), por isso cada refresh token só serve
+   * uma vez. Preserva a unidade ativa se o cliente a indicar e ela pertencer à
+   * conta; senão usa a unidade por omissão.
+   */
+  async refresh(refreshToken: string, tenantId?: string) {
+    const parsed = this.parseRefreshToken(refreshToken);
+    if (!parsed) throw new UnauthorizedException('Sessão inválida.');
+
+    const row = await this.prisma.refreshToken.findUnique({ where: { id: parsed.id } });
+    if (!row || row.revokedAt || row.expiresAt.getTime() < Date.now()) {
+      throw new UnauthorizedException('Sessão expirada. Inicia sessão novamente.');
+    }
+    const ok = await argon2.verify(row.tokenHash, parsed.secret).catch(() => false);
+    if (!ok) throw new UnauthorizedException('Sessão inválida.');
+
+    const user = await this.prisma.user.findUnique({ where: { id: row.userId } });
+    if (!user) throw new UnauthorizedException('Sessão inválida.');
+    await this.assertAccountNotBanned(user.accountId);
+
+    // roda: o refresh token só vale uma vez
+    await this.prisma.refreshToken.update({
+      where: { id: row.id },
+      data: { revokedAt: new Date() },
+    });
+
+    const activeTenantId = await this.resolveTenantId(user, tenantId);
+    const tokens = await this.issueTokens(user, activeTenantId);
+    return { user: this.sanitizeUser(user), ...tokens };
+  }
+
+  /** Revoga um refresh token (logout). Idempotente e silencioso. */
+  async logout(refreshToken: string) {
+    const parsed = this.parseRefreshToken(refreshToken);
+    if (parsed) {
+      await this.prisma.refreshToken.updateMany({
+        where: { id: parsed.id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+    }
+    return { ok: true };
+  }
+
   /** Nenhuma emissão de sessão para contas banidas (login, verify-email, switch). */
   private async assertAccountNotBanned(accountId: string | null) {
     if (!accountId) return;
@@ -328,7 +381,40 @@ export class AuthService {
       secret: process.env.JWT_ACCESS_SECRET ?? 'dev-access-secret',
       expiresIn: process.env.JWT_ACCESS_TTL ?? '15m',
     });
-    return { accessToken };
+    const refreshToken = await this.createRefreshToken(user.id);
+    return { accessToken, refreshToken };
+  }
+
+  /**
+   * Cria um refresh token opaco no formato `<id>.<segredo>`. Guardamos só o hash
+   * do segredo (argon2) — o valor em claro nunca fica na base de dados.
+   */
+  private async createRefreshToken(userId: string): Promise<string> {
+    const secret = randomBytes(32).toString('hex');
+    const ttl = parseDurationMs(process.env.JWT_REFRESH_TTL ?? '7d');
+    const row = await this.prisma.refreshToken.create({
+      data: {
+        userId,
+        tokenHash: await argon2.hash(secret),
+        expiresAt: new Date(Date.now() + ttl),
+      },
+    });
+    return `${row.id}.${secret}`;
+  }
+
+  private parseRefreshToken(raw: string): { id: string; secret: string } | null {
+    const i = raw.indexOf('.');
+    if (i <= 0 || i === raw.length - 1) return null;
+    return { id: raw.slice(0, i), secret: raw.slice(i + 1) };
+  }
+
+  /** Unidade ativa pedida (se pertencer à conta do utilizador) ou a por omissão. */
+  private async resolveTenantId(user: User, wanted?: string): Promise<string | null> {
+    if (wanted) {
+      const t = await this.prisma.tenant.findUnique({ where: { id: wanted } });
+      if (t && t.accountId === user.accountId) return t.id;
+    }
+    return this.defaultTenantId(user.accountId);
   }
 
   private sanitizeUser(user: User) {

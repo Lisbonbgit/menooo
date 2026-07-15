@@ -22,6 +22,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/auth-store';
+import { useAuthHydrated } from '@/lib/use-hydrated';
 import {
   useStats,
   useTenants,
@@ -89,13 +90,15 @@ function ago(iso: string | null): string {
 export default function TenantsPage() {
   const router = useRouter();
   const { token, name, logout } = useAuthStore();
+  const hydrated = useAuthHydrated();
   const [ready, setReady] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!hydrated) return; // espera o persist restaurar o token antes de decidir
     if (!token) router.replace('/login');
     else setReady(true);
-  }, [token, router]);
+  }, [hydrated, token, router]);
 
   const stats = useStats();
   const tenants = useTenants();
