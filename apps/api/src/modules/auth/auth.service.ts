@@ -313,7 +313,18 @@ export class AuthService {
     if (!parsed) throw new UnauthorizedException('Sessão inválida.');
 
     const row = await this.prisma.refreshToken.findUnique({ where: { id: parsed.id } });
-    if (!row || row.revokedAt || row.expiresAt.getTime() < Date.now()) {
+    if (!row) throw new UnauthorizedException('Sessão inválida.');
+
+    // Reutilização de um token JÁ rodado = cópia roubada ou replay: corta a
+    // família inteira do utilizador e obriga a nova autenticação.
+    if (row.revokedAt) {
+      await this.prisma.refreshToken.updateMany({
+        where: { userId: row.userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      throw new UnauthorizedException('Sessão expirada. Inicia sessão novamente.');
+    }
+    if (row.expiresAt.getTime() < Date.now()) {
       throw new UnauthorizedException('Sessão expirada. Inicia sessão novamente.');
     }
     const ok = await argon2.verify(row.tokenHash, parsed.secret).catch(() => false);
@@ -329,7 +340,11 @@ export class AuthService {
       data: { revokedAt: new Date() },
     });
 
-    const activeTenantId = await this.resolveTenantId(user, tenantId);
+    // KITCHEN está PRESO à unidade emparelhada — ignora o tenantId do cliente.
+    const activeTenantId =
+      user.role === UserRole.KITCHEN
+        ? (user.kitchenTenantId ?? null)
+        : await this.resolveTenantId(user, tenantId);
     const tokens = await this.issueTokens(user, activeTenantId);
     return { user: this.sanitizeUser(user), ...tokens };
   }
@@ -377,11 +392,21 @@ export class AuthService {
       email: user.email,
       role: user.role,
     };
+    // TTLs mais curtos para a cozinha: o tablet é partilhado e a revogação
+    // ("desemparelhar") só faz efeito quando o access token expira.
+    const isKitchen = user.role === UserRole.KITCHEN;
     const accessToken = await this.jwt.signAsync(payload, {
       secret: process.env.JWT_ACCESS_SECRET ?? 'dev-access-secret',
-      expiresIn: process.env.JWT_ACCESS_TTL ?? '15m',
+      expiresIn: isKitchen
+        ? (process.env.KITCHEN_ACCESS_TTL ?? '5m')
+        : (process.env.JWT_ACCESS_TTL ?? '15m'),
     });
-    const refreshToken = await this.createRefreshToken(user.id);
+    const refreshTtlMs = parseDurationMs(
+      isKitchen
+        ? (process.env.KITCHEN_REFRESH_TTL ?? '5d')
+        : (process.env.JWT_REFRESH_TTL ?? '7d'),
+    );
+    const refreshToken = await this.createRefreshToken(user.id, refreshTtlMs);
     return { accessToken, refreshToken };
   }
 
@@ -389,14 +414,13 @@ export class AuthService {
    * Cria um refresh token opaco no formato `<id>.<segredo>`. Guardamos só o hash
    * do segredo (argon2) — o valor em claro nunca fica na base de dados.
    */
-  private async createRefreshToken(userId: string): Promise<string> {
+  private async createRefreshToken(userId: string, ttlMs: number): Promise<string> {
     const secret = randomBytes(32).toString('hex');
-    const ttl = parseDurationMs(process.env.JWT_REFRESH_TTL ?? '7d');
     const row = await this.prisma.refreshToken.create({
       data: {
         userId,
         tokenHash: await argon2.hash(secret),
-        expiresAt: new Date(Date.now() + ttl),
+        expiresAt: new Date(Date.now() + ttlMs),
       },
     });
     return `${row.id}.${secret}`;

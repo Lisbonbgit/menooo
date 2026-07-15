@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { UserRole } from '@prisma/client';
 import { AuthService } from './auth.service';
 import { RegisterRestaurantDto } from './dto/register-restaurant.dto';
 import { LoginDto } from './dto/login.dto';
@@ -11,6 +12,8 @@ import { RefreshDto, LogoutDto } from './dto/refresh.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../../common/types/authenticated-user';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { RolesGuard } from '../../common/guards/roles.guard';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -76,8 +79,10 @@ export class AuthController {
     return user;
   }
 
-  /** Troca a unidade ativa da sessão (devolve novo token). */
+  /** Troca a unidade ativa da sessão (devolve novo token). KITCHEN está preso à sua unidade. */
   @ApiBearerAuth()
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.OWNER, UserRole.STAFF)
   @Post('switch')
   switchTenant(@CurrentUser() user: AuthenticatedUser, @Body() dto: SwitchTenantDto) {
     return this.auth.switchTenant(user, dto.tenantId);
