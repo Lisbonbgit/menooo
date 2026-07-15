@@ -1,9 +1,10 @@
 'use client';
 
 import type { Order } from './types';
-import { buildReceiptBytes } from './escpos';
+import { buildReceiptBytes, toBase64 } from './escpos';
 import { printRawBytes } from './qz';
 import { usePrintStore } from './print-store';
+import { isNativeApp, getKitchenPrinter } from './kitchen-printer';
 
 const eur = (v: string | number) => `${Number(v).toFixed(2)} €`;
 
@@ -84,12 +85,26 @@ function browserPrint(order: Order, storeName: string) {
   w.document.close();
 }
 
+export type PrintVia = 'qz' | 'browser' | 'native' | 'unconfigured';
+
 /**
- * Imprime a encomenda: usa o QZ Tray (impressora térmica) se houver uma
- * selecionada; caso contrário, recorre à impressão do browser.
+ * Imprime a encomenda pelo melhor caminho disponível:
+ * app de cozinha → TCP nativo; desktop com QZ → térmica; senão → browser.
+ * 'unconfigured' = app nativa sem IP configurado (estado explícito, não erro).
  */
-export async function printOrder(order: Order, storeName: string): Promise<'qz' | 'browser'> {
-  const { printerName, width } = usePrintStore.getState();
+export async function printOrder(order: Order, storeName: string): Promise<PrintVia> {
+  const { printerName, printerIp, printerPort, width } = usePrintStore.getState();
+  if (isNativeApp()) {
+    if (!printerIp) return 'unconfigured';
+    const plugin = getKitchenPrinter();
+    if (!plugin) {
+      // APK antigo sem o plugin (skew web↔APK) — mensagem acionável, não crash
+      throw new Error('Atualiza a app de cozinha para imprimir por rede.');
+    }
+    const bytes = buildReceiptBytes(order, { storeName, width });
+    await plugin.print({ ip: printerIp, port: printerPort, dataBase64: toBase64(bytes) });
+    return 'native';
+  }
   if (printerName) {
     const bytes = buildReceiptBytes(order, { storeName, width });
     await printRawBytes(printerName, bytes);
