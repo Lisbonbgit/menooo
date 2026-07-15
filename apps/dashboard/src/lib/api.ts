@@ -21,6 +21,19 @@ api.interceptors.request.use((config) => {
 // o pedido; só terminamos a sessão se a renovação falhar.
 let refreshPromise: Promise<string | null> | null = null;
 
+/**
+ * Renova a sessão (single-flight): usável pelo interceptor HTTP e pelo socket.
+ * Devolve o access token novo, ou null se a renovação falhar.
+ */
+export function ensureFreshSession(): Promise<string | null> {
+  refreshPromise =
+    refreshPromise ??
+    refreshSession().finally(() => {
+      refreshPromise = null;
+    });
+  return refreshPromise;
+}
+
 /** tenantId do access token atual, para o refresh preservar a unidade ativa. */
 function currentTenantId(): string | undefined {
   const token = useAuthStore.getState().token;
@@ -59,9 +72,7 @@ api.interceptors.response.use(
 
     if (status === 401 && original && !original._retry && !isAuthCall) {
       original._retry = true;
-      refreshPromise = refreshPromise ?? refreshSession();
-      const newToken = await refreshPromise;
-      refreshPromise = null;
+      const newToken = await ensureFreshSession();
       if (newToken) {
         original.headers.Authorization = `Bearer ${newToken}`;
         return api(original);
