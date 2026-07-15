@@ -36,9 +36,18 @@ export class OrdersGateway implements OnGatewayConnection {
         client.disconnect();
         return;
       }
+      client.data.role = payload.role; // usado por disconnectKitchen no desemparelhar
       client.join(room(payload.tenantId));
     } catch {
       client.disconnect();
+    }
+  }
+
+  /** Desliga os sockets de cozinha de uma unidade (chamado ao desemparelhar). */
+  async disconnectKitchen(tenantId: string) {
+    const sockets = await this.server.in(room(tenantId)).fetchSockets();
+    for (const s of sockets) {
+      if (s.data.role === 'KITCHEN') s.disconnect(true);
     }
   }
 

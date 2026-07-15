@@ -10,6 +10,6 @@ import { PromotionsModule } from '../promotions/promotions.module';
   imports: [JwtModule.register({}), PromotionsModule],
   controllers: [OrdersController, PublicOrdersController],
   providers: [OrdersService, OrdersGateway],
-  exports: [OrdersService],
+  exports: [OrdersService, OrdersGateway],
 })
 export class OrdersModule {}
