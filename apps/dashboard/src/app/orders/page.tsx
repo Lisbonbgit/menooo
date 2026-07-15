@@ -24,7 +24,7 @@ import {
 import { api } from '@/lib/api';
 import { useLiveOrders, useUpdateOrderStatus } from '@/lib/orders-hooks';
 import { usePrintStore } from '@/lib/print-store';
-import { printOrder } from '@/lib/print';
+import { printOrder, type PrintVia } from '@/lib/print';
 import { AppShell } from '@/components/AppShell';
 import { PrinterSettings } from '@/components/PrinterSettings';
 import type { Order, OrderStatus } from '@/lib/types';
@@ -126,17 +126,19 @@ export default function OrdersPage() {
   }, []);
 
   const print = useCallback(
-    async (order: Order) => {
+    async (order: Order): Promise<PrintVia | 'error'> => {
       try {
         const via = await printOrder(order, storeName);
         if (via === 'unconfigured') {
           toast.error('Configura o IP da impressora nas definições de impressão.');
-          return;
+          return via;
         }
         usePrintStore.getState().removePendingPrint(order.id);
+        return via;
       } catch (e: any) {
         usePrintStore.getState().addPendingPrint(order.id);
         toast.error(e?.message ?? 'Erro ao imprimir');
+        return 'error';
       }
     },
     [storeName],
@@ -181,7 +183,8 @@ export default function OrdersPage() {
     for (const o of pendingOrders) {
       // sequencial de propósito: a térmica só aceita uma ligação de cada vez
       // eslint-disable-next-line no-await-in-loop
-      await print(o);
+      const via = await print(o);
+      if (via === 'unconfigured') break; // config global em falta: não repetir o toast
     }
     setRetrying(false);
   }

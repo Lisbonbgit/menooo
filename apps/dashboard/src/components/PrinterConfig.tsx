@@ -234,11 +234,11 @@ export function PrinterConfig({ storeName }: { storeName: string }) {
           <p className="text-[11.5px] text-ink-mute">
             Cada nova encomenda sai logo na impressora, sem cliques.
           </p>
+          <p className="mt-2 text-[11.5px] leading-snug text-amber-700">
+            Liga a impressão automática só num dispositivo — com dois ligados saem dois
+            talões por encomenda.
+          </p>
         </div>
-        <p className="mt-2 text-[11.5px] leading-snug text-amber-700">
-          Liga a impressão automática só num dispositivo — com dois ligados saem dois
-          talões por encomenda.
-        </p>
         <button
           onClick={() => setAutoPrint(!autoPrint)}
           aria-label="Alternar impressão automática"
