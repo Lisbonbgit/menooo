@@ -152,8 +152,7 @@ model ReservationBlock {
 5. Cada slot corre a atribuição (4.2) com mesas `bookableOnline`; devolve
    `{ slots: string[] }` (hora local do tenant), **deduplicados por instante UTC**
    (colisões DST, ver 4.4).
-6. Limitação assumida v1 (herdada do OpeningHour): **sem horários que atravessam a
-   meia-noite** (fecho ≤ 24:00); overnight fica no §12.
+6. Limitação assumida v1: janelas de reserva até 23:00 (closeMinute ≤ 1380) — v1 sem slots à meia-noite; overnight fica no §12.
 
 ### 4.2 Atribuição (janela, partySize, canal)
 

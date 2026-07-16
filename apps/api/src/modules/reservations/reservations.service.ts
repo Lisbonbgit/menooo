@@ -822,8 +822,12 @@ export class ReservationsService {
     }
     await this.prisma.$transaction(
       async (tx) => {
-        // mesmo lock por tenant das reservas — serializa contra uma atribuição/edição
-        // concorrente que dependa das janelas ainda a ser substituídas
+        // mesmo lock por tenant das reservas — mas aqui só serializa PUTs concorrentes de
+        // janelas entre si (evita duas escritas em corrida a pisarem-se uma à outra). NÃO
+        // serializa contra um createPublic em voo: esse lê o tenant (com as janelas) fora
+        // desta tx, antes do lock; na pior das hipóteses vê a config do snapshot pré-lock —
+        // janela de milissegundos, efeito inócuo (o pipeline público revalida tudo dentro
+        // do seu próprio lock, incl. a grelha de horas).
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId}))`;
         await tx.reservationWindow.deleteMany({ where: { tenantId } });
         await tx.reservationWindow.createMany({
@@ -851,9 +855,17 @@ export class ReservationsService {
   async createBlock(tenantId: string, dto: CreateBlockDto) {
     if (!isRealDateISO(dto.date)) throw new BadRequestException('Data inválida.');
     try {
-      return await this.prisma.reservationBlock.create({
-        data: { tenantId, date: dto.date, reason: dto.reason ?? null },
-      });
+      return await this.prisma.$transaction(
+        async (tx) => {
+          // mesmo lock por tenant do createPublic — fecha a corrida "Pausar hoje" (bloqueio
+          // de dia) vs um POST público em voo para a mesma data
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId}))`;
+          return await tx.reservationBlock.create({
+            data: { tenantId, date: dto.date, reason: dto.reason ?? null },
+          });
+        },
+        { timeout: 15_000 },
+      );
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
         throw new ConflictException('Esse dia já está bloqueado.');

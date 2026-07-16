@@ -434,11 +434,18 @@ async function main() {
     check('R2 criada 201', r16b.status === 201, `got ${r16b.status}`);
     const r1Id = await reservationIdByCode(ownerToken, DATE_G, r16a.json.code);
     check('R1 id encontrado no painel', !!r1Id);
+    const r1RowBefore = (await req('GET', `/reservations?date=${DATE_G}`, { token: ownerToken })).json?.find((x) => x.id === r1Id);
+    const r1TableIdBefore = r1RowBefore?.tables?.[0]?.tableId;
     const editTime = await req('PATCH', `/reservations/${r1Id}`, { token: ownerToken, body: { time: '13:30' } });
     check('PATCH hora 200', editTime.status === 200, `got ${editTime.status} ${JSON.stringify(editTime.json)}`);
     const r1Row = (await req('GET', `/reservations?date=${DATE_G}`, { token: ownerToken })).json?.find((x) => x.id === r1Id);
     check('hora refletida no painel (13:30)', hhmmInTz(r1Row?.startsAt) === '13:30', hhmmInTz(r1Row?.startsAt));
-    check('mesa mantida (não mudou ao editar só a hora)', r1Row?.tables?.length === 1);
+    const r1TableIdAfter = r1Row?.tables?.[0]?.tableId;
+    check(
+      'mesa mantida (mesmo tableId)',
+      r1Row?.tables?.length === 1 && !!r1TableIdBefore && r1TableIdBefore === r1TableIdAfter,
+      `before=${r1TableIdBefore} after=${r1TableIdAfter}`,
+    );
 
     const r2TableName = await tableNameOfReservation(ownerToken, DATE_G, r16b.json.code);
     const r2TableId = tableIdByName[r2TableName];

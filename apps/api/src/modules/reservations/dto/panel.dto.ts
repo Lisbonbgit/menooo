@@ -80,7 +80,7 @@ export class UpdateReservationStatusDto {
 export class ReservationWindowDto {
   @IsInt() @Min(0) @Max(6) weekday!: number;
   @IsInt() @Min(0) @Max(1440) openMinute!: number;
-  @IsInt() @Min(0) @Max(1440) closeMinute!: number;
+  @IsInt() @Min(0) @Max(1380) closeMinute!: number;
 }
 
 /** Substitui a lista completa de janelas de reserva do tenant (máx. 2 por weekday). */
