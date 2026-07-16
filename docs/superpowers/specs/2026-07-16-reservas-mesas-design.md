@@ -190,9 +190,11 @@ capacidade < partySize).
 - **MANUAL** (painel): mesmo lock e sobreposição; **ignora** grelha (hora livre
   arredondada a 15 min, pode ser "agora"), minNotice, maxAdvance e maxPartySize;
   `durationMin?` opcional (30–480, default = do tenant); telefone/email opcionais.
-- **PATCH /reservations/:id (edição)**: hora/duração/pax/mesas/notas — re-corre a
-  atribuição no mesmo lock (mesa forçada opcional); sem email automático ao cliente no
-  MVP (o painel mostra aviso "avisa o cliente da alteração").
+- **PATCH /reservations/:id (edição)**: hora/duração/pax/mesas/notas, no mesmo lock; a
+  edição mantém as mesas atuais se continuarem livres na janela nova; só re-atribui
+  quando não estão (ou quando o dono força outras); edições sem impacto na colocação
+  (contactos/notas) nunca mexem nas mesas. Sem email automático ao cliente no MVP (o
+  painel mostra aviso "avisa o cliente da alteração").
 
 ### 4.4 `localDateTimeToUtc(date, minutes, tz)` — util NOVO (inversa do open-now)
 

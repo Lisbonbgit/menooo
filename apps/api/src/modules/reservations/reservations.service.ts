@@ -43,6 +43,17 @@ function hhmm(minutes: number): string {
   return `${String(Math.floor(minutes / 60) % 24).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
 }
 
+/** Valida que "YYYY-MM-DD" é uma data de calendário real (rejeita p.ex. 2026-02-30). */
+function isRealDateISO(dateISO: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateISO);
+  if (!m) return false;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const day = Number(m[3]);
+  const d = new Date(Date.UTC(y, mo - 1, day, 12));
+  return d.getUTCFullYear() === y && d.getUTCMonth() === mo - 1 && d.getUTCDate() === day;
+}
+
 type TenantWithHours = Prisma.TenantGetPayload<{
   include: { account: true; openingHours: true; reservationWindows: true };
 }>;
@@ -97,6 +108,7 @@ export class ReservationsService {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dateISO ?? '') || !Number.isInteger(party) || party < 1 || party > 50) {
       throw new BadRequestException('Parâmetros inválidos.');
     }
+    if (!isRealDateISO(dateISO)) throw new BadRequestException('Data inválida.');
     const tenant = await this.gatedTenant(slug);
     const result = await this.slotsForDay(tenant, dateISO, party, 'ONLINE');
     return { ...result, slots: result.slots.map((s) => s.label) };
@@ -272,6 +284,7 @@ export class ReservationsService {
   }
 
   async createPublic(slug: string, dto: CreatePublicReservationDto) {
+    if (!isRealDateISO(dto.date)) throw new BadRequestException('Data inválida.');
     const tenant = await this.gatedTenant(slug);
     const tz = tenant.timezone || 'Europe/Lisbon';
     const minutes = this.timeToMinutes(dto.time); // "HH:MM" → int; 422 se NaN
@@ -585,6 +598,7 @@ export class ReservationsService {
    * arredondada a 15 min; sem email ao restaurante (foi ele que criou) — só socket.
    */
   async createManual(tenantId: string, dto: CreateManualReservationDto) {
+    if (!isRealDateISO(dto.date)) throw new BadRequestException('Data inválida.');
     const tenant = await this.requireTenant(tenantId);
     const tz = tenant.timezone || 'Europe/Lisbon';
     const minutes = this.timeToMinutes(dto.time);
@@ -624,22 +638,54 @@ export class ReservationsService {
   }
 
   /**
-   * Edição (painel): só CONFIRMED; recalcula start/end (duração explícita ou mantém a
-   * atual); mesas forçadas ou re-atribuição EXCLUINDO a própria reserva da ocupação;
-   * substitui `tables`. Sem email automático ao cliente. Socket updated.
+   * Edição (painel): só CONFIRMED. Só re-atribui mesas quando a COLOCAÇÃO muda
+   * (data/hora/duração/pax, ou mesas forçadas novas) — edições de contactos/notas
+   * nunca tocam nas mesas nem re-verificam sobreposição (a janela não mudou). Quando a
+   * colocação muda sem mesas forçadas novas, tenta primeiro manter as mesas ATUAIS se
+   * continuarem livres na janela nova; só re-atribui automaticamente se não estiverem
+   * (mudar a hora não salta silenciosamente de mesa se ela continuar livre). Sem email
+   * automático ao cliente. Socket updated.
    */
   async updateReservation(tenantId: string, id: string, dto: UpdateReservationDto) {
+    if (dto.date !== undefined && !isRealDateISO(dto.date)) {
+      throw new BadRequestException('Data inválida.');
+    }
     const tenant = await this.requireTenant(tenantId);
     const tz = tenant.timezone || 'Europe/Lisbon';
+
+    const placementChanged =
+      dto.date !== undefined ||
+      dto.time !== undefined ||
+      dto.durationMin !== undefined ||
+      dto.partySize !== undefined ||
+      (dto.tableIds !== undefined && dto.tableIds.length > 0);
 
     const updated = await this.prisma.$transaction(
       async (tx) => {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId}))`;
 
-        const existing = await tx.reservation.findFirst({ where: { id, tenantId } });
+        const existing = await tx.reservation.findFirst({ where: { id, tenantId }, include: { tables: true } });
         if (!existing) throw new NotFoundException('Reserva não encontrada.');
         if (existing.status !== ReservationStatus.CONFIRMED) {
           throw new BadRequestException('Só é possível editar reservas confirmadas.');
+        }
+
+        if (!placementChanged) {
+          // sem impacto na colocação (só contactos/notas): nunca mexe nas mesas
+          const result = await tx.reservation.updateMany({
+            where: { id, tenantId, status: ReservationStatus.CONFIRMED },
+            data: {
+              customerName: dto.customerName ?? existing.customerName,
+              customerPhone: dto.customerPhone ?? existing.customerPhone,
+              customerEmail: dto.customerEmail !== undefined ? dto.customerEmail : existing.customerEmail,
+              notes: dto.notes !== undefined ? dto.notes : existing.notes,
+            },
+          });
+          if (result.count === 0) throw new NotFoundException('Reserva não encontrada.');
+          return tx.reservation.findUniqueOrThrow({
+            where: { id },
+            include: { tables: { include: { table: true } } },
+          });
         }
 
         let start = existing.startsAt;
@@ -655,10 +701,27 @@ export class ReservationsService {
         const end = new Date(start.getTime() + durationMin * 60_000);
         const partySize = dto.partySize ?? existing.partySize;
 
-        const tableIds =
-          dto.tableIds && dto.tableIds.length > 0
-            ? await this.forcedTables(tx, tenant, dto.tableIds, start, end, existing.id)
-            : await this.assignForWindowTx(tx, tenant, start, end, partySize, 'MANUAL', existing.id);
+        let tableIds: string[];
+        if (dto.tableIds && dto.tableIds.length > 0) {
+          tableIds = await this.forcedTables(tx, tenant, dto.tableIds, start, end, existing.id);
+        } else {
+          const currentTableIds = existing.tables.map((t) => t.tableId);
+          if (currentTableIds.length > 0) {
+            try {
+              // revalida as mesas ATUAIS na janela nova (mesma verificação de sobreposição
+              // das mesas forçadas); só cai na re-atribuição automática se não estiverem livres
+              tableIds = await this.forcedTables(tx, tenant, currentTableIds, start, end, existing.id);
+            } catch (e) {
+              if (e instanceof HttpException) {
+                tableIds = await this.assignForWindowTx(tx, tenant, start, end, partySize, 'MANUAL', existing.id);
+              } else {
+                throw e;
+              }
+            }
+          } else {
+            tableIds = await this.assignForWindowTx(tx, tenant, start, end, partySize, 'MANUAL', existing.id);
+          }
+        }
 
         const result = await tx.reservation.updateMany({
           where: { id, tenantId },
@@ -757,17 +820,23 @@ export class ReservationsService {
       if (count > 2) throw new BadRequestException(`Máximo de 2 janelas por dia (dia ${w.weekday}).`);
       perWeekday.set(w.weekday, count);
     }
-    await this.prisma.$transaction([
-      this.prisma.reservationWindow.deleteMany({ where: { tenantId } }),
-      this.prisma.reservationWindow.createMany({
-        data: dto.windows.map((w) => ({
-          tenantId,
-          weekday: w.weekday,
-          openMinute: w.openMinute,
-          closeMinute: w.closeMinute,
-        })),
-      }),
-    ]);
+    await this.prisma.$transaction(
+      async (tx) => {
+        // mesmo lock por tenant das reservas — serializa contra uma atribuição/edição
+        // concorrente que dependa das janelas ainda a ser substituídas
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId}))`;
+        await tx.reservationWindow.deleteMany({ where: { tenantId } });
+        await tx.reservationWindow.createMany({
+          data: dto.windows.map((w) => ({
+            tenantId,
+            weekday: w.weekday,
+            openMinute: w.openMinute,
+            closeMinute: w.closeMinute,
+          })),
+        });
+      },
+      { timeout: 15_000 },
+    );
     return this.listWindows(tenantId);
   }
 
@@ -780,6 +849,7 @@ export class ReservationsService {
   }
 
   async createBlock(tenantId: string, dto: CreateBlockDto) {
+    if (!isRealDateISO(dto.date)) throw new BadRequestException('Data inválida.');
     try {
       return await this.prisma.reservationBlock.create({
         data: { tenantId, date: dto.date, reason: dto.reason ?? null },
