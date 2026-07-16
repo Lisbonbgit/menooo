@@ -38,6 +38,8 @@ export class OrdersGateway implements OnGatewayConnection {
       }
       client.data.role = payload.role; // usado por disconnectKitchen no desemparelhar
       client.join(room(payload.tenantId));
+      // reservas transportam PII do cliente — só front-of-house (nunca a cozinha)
+      if (payload.role !== 'KITCHEN') client.join(`${room(payload.tenantId)}:staff`);
     } catch {
       client.disconnect();
     }
@@ -57,5 +59,13 @@ export class OrdersGateway implements OnGatewayConnection {
 
   emitOrderUpdated(tenantId: string, order: unknown) {
     this.server.to(room(tenantId)).emit('order.updated', order);
+  }
+
+  emitReservationCreated(tenantId: string, reservation: unknown) {
+    this.server.to(`${room(tenantId)}:staff`).emit('reservation.created', reservation);
+  }
+
+  emitReservationUpdated(tenantId: string, reservation: unknown) {
+    this.server.to(`${room(tenantId)}:staff`).emit('reservation.updated', reservation);
   }
 }

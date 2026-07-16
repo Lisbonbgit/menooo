@@ -13,6 +13,17 @@ const NOTIFY_EMAIL = () => process.env.PLATFORM_NOTIFY_EMAIL ?? 'geral@lisbonb.c
 const fmtDate = (d: Date | string) =>
   new Date(d).toLocaleDateString('pt-PT', { day: 'numeric', month: 'long', year: 'numeric' });
 
+/** Dados de uma reserva usados nos templates de email (Fase R1). */
+export interface ReservationMailInfo {
+  restaurantName: string;
+  code: string;
+  dateText: string;
+  timeText: string;
+  partySize: number;
+  tableNames: string[];
+  manageUrl?: string;
+}
+
 /**
  * Emails transacionais via SMTP (qualquer fornecedor; produção usa Resend).
  * Sem SMTP_HOST fica desativado (regista no log e segue sem falhar).
@@ -99,6 +110,22 @@ export class MailService {
 
   private cta(label: string, url: string) {
     return `<p style="margin:22px 0 6px;"><a href="${url}" style="background:#E05A1E;color:#FFFFFF;text-decoration:none;padding:12px 24px;border-radius:8px;font-size:15px;font-weight:bold;font-family:Arial,Helvetica,sans-serif;display:inline-block;">${label}</a></p>`;
+  }
+
+  /** Escapa input do cliente para HTML e remove quebras (anti-injeção em templates/headers). */
+  private esc(s: string): string {
+    return s
+      .replace(/[\r\n]+/g, ' ')
+      .replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+  }
+
+  private pax(n: number): string {
+    return n === 1 ? '1 pessoa' : `${n} pessoas`;
+  }
+
+  private tableLabel(names: string[]): string {
+    if (names.length === 0) return '—';
+    return names.length > 1 ? `Mesas ${names.join(', ')}` : `Mesa ${names[0]}`;
   }
 
   // ==========================================================================
@@ -242,6 +269,82 @@ export class MailService {
         ) +
         this.p(`Mudaste de ideias? Podes reativar em segundos no painel.`) +
         this.cta('Reativar a subscrição', `${DASHBOARD_URL()}/settings`),
+    );
+  }
+
+  // ==========================================================================
+  // Reservas
+  // ==========================================================================
+
+  /** 6. Reserva confirmada — enviado ao cliente. */
+  async sendReservationConfirmed(to: string, customerName: string, info: ReservationMailInfo) {
+    await this.send(
+      to,
+      `Reserva confirmada — ${info.restaurantName} (${info.code})`,
+      this.h('Reserva confirmada.') +
+        this.p(
+          `Olá ${this.esc(customerName)}, a tua reserva na <strong>${info.restaurantName}</strong> está confirmada.`,
+        ) +
+        this.p(
+          `<strong>${info.dateText}</strong>, às <strong>${info.timeText}</strong> · ${this.pax(info.partySize)} · ${this.tableLabel(info.tableNames)}<br>Código da reserva: <strong>${info.code}</strong>`,
+        ) +
+        (info.manageUrl ? this.cta('Gerir reserva', info.manageUrl) : ''),
+    );
+  }
+
+  /** 7. Reserva cancelada — enviado ao cliente (pelo restaurante ou por ele próprio). */
+  async sendReservationCancelled(
+    to: string,
+    customerName: string,
+    info: ReservationMailInfo,
+    byRestaurant: boolean,
+  ) {
+    await this.send(
+      to,
+      `Reserva cancelada — ${info.restaurantName} (${info.code})`,
+      this.h('Reserva cancelada.') +
+        this.p(
+          byRestaurant
+            ? `Olá ${this.esc(customerName)}, a tua reserva na <strong>${info.restaurantName}</strong> foi cancelada pelo restaurante.`
+            : `Olá ${this.esc(customerName)}, confirmamos o cancelamento da tua reserva na <strong>${info.restaurantName}</strong>.`,
+        ) +
+        this.p(
+          `<strong>${info.dateText}</strong>, às <strong>${info.timeText}</strong> · ${this.pax(info.partySize)} · ${this.tableLabel(info.tableNames)}<br>Código da reserva: <strong>${info.code}</strong>`,
+        ),
+    );
+  }
+
+  /** 8. Aviso ao restaurante: nova reserva recebida. */
+  async sendNewReservationAlert(
+    to: string,
+    info: ReservationMailInfo & { customerName: string; customerPhone: string; notes?: string | null },
+  ) {
+    await this.send(
+      to,
+      `Nova reserva — ${info.restaurantName} (${info.code})`,
+      this.h('Nova reserva.') +
+        this.p(
+          `Uma nova reserva foi criada na <strong>${info.restaurantName}</strong> — código <strong>${info.code}</strong>.`,
+        ) +
+        this.p(
+          `<strong>${this.esc(info.customerName)}</strong> · ${info.customerPhone}<br>${this.pax(info.partySize)} · ${info.dateText} às ${info.timeText} · ${this.tableLabel(info.tableNames)}`,
+        ) +
+        (info.notes ? this.p(`Notas: ${this.esc(info.notes)}`) : ''),
+    );
+  }
+
+  /** 9. Aviso ao restaurante: reserva cancelada. */
+  async sendReservationCancelledAlert(to: string, info: ReservationMailInfo & { customerName: string }) {
+    await this.send(
+      to,
+      `Reserva cancelada — ${info.restaurantName} (${info.code})`,
+      this.h('Reserva cancelada.') +
+        this.p(
+          `A reserva <strong>${info.code}</strong> de <strong>${this.esc(info.customerName)}</strong> na <strong>${info.restaurantName}</strong> foi cancelada.`,
+        ) +
+        this.p(
+          `${this.pax(info.partySize)} · ${info.dateText} às ${info.timeText} · ${this.tableLabel(info.tableNames)}`,
+        ),
     );
   }
 }
