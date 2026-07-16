@@ -100,10 +100,20 @@ export function ReservationFormModal({
       partySize: size,
       customerName: customerName.trim(),
     };
-    if (durationMin.trim()) body.durationMin = Number(durationMin);
-    if (customerPhone.trim()) body.customerPhone = customerPhone.trim();
-    if (customerEmail.trim()) body.customerEmail = customerEmail.trim();
-    if (notes.trim()) body.notes = notes.trim();
+
+    // Em edit, sempre enviar fields opcionais (null quando vazios) para limpeza;
+    // em create, omitir quando vazios (comportamento anterior).
+    if (mode === 'edit' && reservation) {
+      body.durationMin = durationMin.trim() ? Number(durationMin) : null;
+      body.customerPhone = customerPhone.trim() || null;
+      body.customerEmail = customerEmail.trim() || null;
+      body.notes = notes.trim() || null;
+    } else {
+      if (durationMin.trim()) body.durationMin = Number(durationMin);
+      if (customerPhone.trim()) body.customerPhone = customerPhone.trim();
+      if (customerEmail.trim()) body.customerEmail = customerEmail.trim();
+      if (notes.trim()) body.notes = notes.trim();
+    }
     if (tableIds.length > 0) body.tableIds = tableIds;
 
     setSaving(true);
