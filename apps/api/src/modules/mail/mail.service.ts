@@ -327,7 +327,7 @@ export class MailService {
           `Uma nova reserva foi criada na <strong>${info.restaurantName}</strong> — código <strong>${info.code}</strong>.`,
         ) +
         this.p(
-          `<strong>${this.esc(info.customerName)}</strong> · ${info.customerPhone}<br>${this.pax(info.partySize)} · ${info.dateText} às ${info.timeText} · ${this.tableLabel(info.tableNames)}`,
+          `<strong>${this.esc(info.customerName)}</strong> · ${this.esc(info.customerPhone)}<br>${this.pax(info.partySize)} · ${info.dateText} às ${info.timeText} · ${this.tableLabel(info.tableNames)}`,
         ) +
         (info.notes ? this.p(`Notas: ${this.esc(info.notes)}`) : ''),
     );
