@@ -8,6 +8,7 @@ import { clsx } from 'clsx';
 import {
   LayoutDashboard,
   BellRing,
+  CalendarCheck,
   BookOpen,
   BadgePercent,
   Settings,
@@ -23,6 +24,7 @@ import { TenantSwitcher } from '@/components/TenantSwitcher';
 const NAV = [
   { href: '/overview', label: 'Visão geral', icon: LayoutDashboard },
   { href: '/orders', label: 'Receção', icon: BellRing },
+  { href: '/reservations', label: 'Reservas', icon: CalendarCheck },
   { href: '/menu', label: 'Menu', icon: BookOpen },
   { href: '/promotions', label: 'Promoções', icon: BadgePercent },
   { href: '/settings', label: 'Definições', icon: Settings },
