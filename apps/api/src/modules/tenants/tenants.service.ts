@@ -54,6 +54,7 @@ export class TenantsService {
       minOrderValue: rest.minOrderValue,
       // "aberto" efetivo = toggle manual E dentro do horário
       isOpen: computeOpenNow(tenant, openingHours),
+      reservationsEnabled: rest.reservationsEnabled,
     };
   }
 

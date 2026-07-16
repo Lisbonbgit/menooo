@@ -1,10 +1,13 @@
 import {
   IsBoolean,
+  IsEmail,
+  IsInt,
   IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
   Matches,
+  Max,
   Min,
 } from 'class-validator';
 
@@ -70,4 +73,43 @@ export class UpdateTenantDto {
   @IsOptional()
   @IsBoolean()
   isOpen?: boolean;
+
+  // Email de contacto do restaurante — usado nos alertas de reservas (fallback: dono da conta).
+  @IsOptional()
+  @IsEmail()
+  email?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  reservationsEnabled?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(30)
+  @Max(480)
+  reservationDurationMin?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(120)
+  reservationBufferMin?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(2880)
+  reservationMinNoticeMin?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(90)
+  reservationMaxAdvanceDays?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  reservationMaxPartySize?: number;
 }

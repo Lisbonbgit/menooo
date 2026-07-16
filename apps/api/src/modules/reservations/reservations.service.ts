@@ -17,6 +17,15 @@ import { localDateISO, localDateTimeToUtc, minutesOfDayInTz, weekdayOf } from '.
 import { slotMinutes } from './slots.util';
 import { assignTables } from './assign.util';
 import { CreatePublicReservationDto } from './dto/public-reservation.dto';
+import {
+  CreateBlockDto,
+  CreateManualReservationDto,
+  CreateTableDto,
+  SetWindowsDto,
+  UpdateReservationDto,
+  UpdateReservationStatusDto,
+  UpdateTableDto,
+} from './dto/panel.dto';
 
 const SLOT_STEP_MIN = 30;
 const CODE_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -177,6 +186,7 @@ export class ReservationsService {
     end: Date,
     party: number,
     channel: 'ONLINE' | 'MANUAL',
+    excludeReservationId?: string,
   ): Promise<string[]> {
     const bufMs = tenant.reservationBufferMin * 60_000;
     const tables = await tx.table.findMany({ where: { tenantId: tenant.id, active: true } });
@@ -184,6 +194,7 @@ export class ReservationsService {
       where: {
         tenantId: tenant.id,
         status: 'CONFIRMED',
+        ...(excludeReservationId ? { id: { not: excludeReservationId } } : {}),
         startsAt: { lt: new Date(end.getTime() + bufMs) },
         endsAt: { gt: new Date(start.getTime() - bufMs) },
       },
@@ -194,6 +205,56 @@ export class ReservationsService {
     const ids = assignTables(tables, occupied, party, channel);
     if (!ids) throw new ConflictException('Não há mesas disponíveis para esse horário.');
     return ids;
+  }
+
+  /**
+   * Mesas forçadas (MANUAL/edição): valida só posse (do tenant), ativas e
+   * não-sobreposição — máx. 2. `joinable`/`area`/`seats` são ignorados de propósito
+   * (o dono sabe melhor; o aviso de capacidade insuficiente é da UI).
+   */
+  private async forcedTables(
+    tx: Prisma.TransactionClient,
+    tenant: TenantWithHours,
+    tableIds: string[],
+    start: Date,
+    end: Date,
+    excludeReservationId?: string,
+  ): Promise<string[]> {
+    if (tableIds.length > 2) throw new BadRequestException('Só é possível forçar até 2 mesas.');
+    const tables = await tx.table.findMany({ where: { id: { in: tableIds }, tenantId: tenant.id } });
+    if (tables.length !== tableIds.length) {
+      throw new BadRequestException('Uma ou mais mesas não pertencem a este restaurante.');
+    }
+    if (tables.some((t) => !t.active)) {
+      throw new BadRequestException('Uma ou mais mesas estão inativas.');
+    }
+    const bufMs = tenant.reservationBufferMin * 60_000;
+    const overlapping = await tx.reservation.findMany({
+      where: {
+        tenantId: tenant.id,
+        status: 'CONFIRMED',
+        ...(excludeReservationId ? { id: { not: excludeReservationId } } : {}),
+        startsAt: { lt: new Date(end.getTime() + bufMs) },
+        endsAt: { gt: new Date(start.getTime() - bufMs) },
+      },
+      include: { tables: true },
+    });
+    const occupied = new Set<string>();
+    for (const r of overlapping) for (const rt of r.tables) occupied.add(rt.tableId);
+    if (tableIds.some((id) => occupied.has(id))) {
+      throw new ConflictException('Uma das mesas escolhidas já está ocupada nesse horário.');
+    }
+    return tableIds;
+  }
+
+  /** Tenant completo (painel) — 404 se a unidade não existir; sem gating de subscrição/reservas. */
+  private async requireTenant(tenantId: string): Promise<TenantWithHours> {
+    const t = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      include: { account: true, openingHours: true, reservationWindows: true },
+    });
+    if (!t) throw new NotFoundException('Restaurante não encontrado.');
+    return t;
   }
 
   // ==========================================================================
@@ -444,5 +505,296 @@ export class ReservationsService {
       select: { email: true },
     });
     return owner?.email ?? null;
+  }
+
+  // ==========================================================================
+  // Painel — Mesas
+  // ==========================================================================
+
+  listTables(tenantId: string) {
+    return this.prisma.table.findMany({
+      where: { tenantId },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    });
+  }
+
+  createTable(tenantId: string, dto: CreateTableDto) {
+    return this.prisma.table.create({
+      data: {
+        tenantId,
+        name: dto.name,
+        seats: dto.seats,
+        area: dto.area ?? null,
+        joinable: dto.joinable ?? false,
+        bookableOnline: dto.bookableOnline ?? true,
+        active: dto.active ?? true,
+        sortOrder: dto.sortOrder ?? 0,
+      },
+    });
+  }
+
+  async updateTable(tenantId: string, id: string, dto: UpdateTableDto) {
+    const result = await this.prisma.table.updateMany({ where: { id, tenantId }, data: dto });
+    if (result.count === 0) throw new NotFoundException('Mesa não encontrada.');
+    return this.prisma.table.findUniqueOrThrow({ where: { id } });
+  }
+
+  /** Apaga a mesa; recusa (409) se tiver reservas no histórico — desativa-a em vez disso. */
+  async deleteTable(tenantId: string, id: string) {
+    return this.prisma.$transaction(
+      async (tx) => {
+        // mesmo lock por tenant das criações/edições de reservas — serializa contra uma
+        // atribuição concorrente que ligue esta mesa a uma reserva nova entre o check e o delete
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId}))`;
+        const owned = await tx.table.count({ where: { id, tenantId } });
+        if (owned === 0) throw new NotFoundException('Mesa não encontrada.');
+        const history = await tx.reservationTable.count({ where: { tableId: id } });
+        if (history > 0) {
+          throw new ConflictException(
+            'Esta mesa tem reservas no histórico — desativa-a em vez de apagar.',
+          );
+        }
+        await tx.table.deleteMany({ where: { id, tenantId } });
+        return { deleted: true };
+      },
+      { timeout: 15_000 },
+    );
+  }
+
+  // ==========================================================================
+  // Painel — Reservas
+  // ==========================================================================
+
+  /** Reservas de um dia LOCAL do tenant, ordenadas, com nomes das mesas. */
+  async listReservations(tenantId: string, dateISO: string) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateISO ?? '')) throw new BadRequestException('Data inválida.');
+    const tenant = await this.requireTenant(tenantId);
+    const tz = tenant.timezone || 'Europe/Lisbon';
+    const dayStart = localDateTimeToUtc(dateISO, 0, tz);
+    const dayEnd = new Date(dayStart.getTime() + 36 * 3_600_000);
+    const rows = await this.prisma.reservation.findMany({
+      where: { tenantId, startsAt: { gte: dayStart, lt: dayEnd } },
+      include: { tables: { include: { table: { select: { name: true } } } } },
+      orderBy: { startsAt: 'asc' },
+    });
+    return rows.filter((r) => localDateISO(r.startsAt, tz) === dateISO);
+  }
+
+  /**
+   * Reserva manual (painel): ignora grelha/minNotice/maxAdvance/maxPartySize; hora
+   * arredondada a 15 min; sem email ao restaurante (foi ele que criou) — só socket.
+   */
+  async createManual(tenantId: string, dto: CreateManualReservationDto) {
+    const tenant = await this.requireTenant(tenantId);
+    const tz = tenant.timezone || 'Europe/Lisbon';
+    const minutes = this.timeToMinutes(dto.time);
+    if (Number.isNaN(minutes)) throw new UnprocessableEntityException('Hora inválida.');
+    const start = localDateTimeToUtc(dto.date, minutes - (minutes % 15), tz);
+    const durationMin = dto.durationMin ?? tenant.reservationDurationMin;
+    const end = new Date(start.getTime() + durationMin * 60_000);
+
+    const row = await this.prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId}))`;
+
+        const tableIds =
+          dto.tableIds && dto.tableIds.length > 0
+            ? await this.forcedTables(tx, tenant, dto.tableIds, start, end)
+            : await this.assignForWindowTx(tx, tenant, start, end, dto.partySize, 'MANUAL');
+
+        return this.createRowWithCode(tx, {
+          tenantId,
+          cancelTokenHash: null,
+          source: 'MANUAL',
+          partySize: dto.partySize,
+          startsAt: start,
+          endsAt: end,
+          customerName: dto.customerName,
+          customerPhone: dto.customerPhone ?? '',
+          customerEmail: dto.customerEmail ?? null,
+          notes: dto.notes ?? null,
+          tables: { create: tableIds.map((tableId) => ({ tableId })) },
+        });
+      },
+      { timeout: 15_000 },
+    );
+
+    this.gateway.emitReservationCreated(tenantId, row);
+    return row;
+  }
+
+  /**
+   * Edição (painel): só CONFIRMED; recalcula start/end (duração explícita ou mantém a
+   * atual); mesas forçadas ou re-atribuição EXCLUINDO a própria reserva da ocupação;
+   * substitui `tables`. Sem email automático ao cliente. Socket updated.
+   */
+  async updateReservation(tenantId: string, id: string, dto: UpdateReservationDto) {
+    const tenant = await this.requireTenant(tenantId);
+    const tz = tenant.timezone || 'Europe/Lisbon';
+
+    const updated = await this.prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId}))`;
+
+        const existing = await tx.reservation.findFirst({ where: { id, tenantId } });
+        if (!existing) throw new NotFoundException('Reserva não encontrada.');
+        if (existing.status !== ReservationStatus.CONFIRMED) {
+          throw new BadRequestException('Só é possível editar reservas confirmadas.');
+        }
+
+        let start = existing.startsAt;
+        if (dto.date !== undefined || dto.time !== undefined) {
+          const dateISO = dto.date ?? localDateISO(existing.startsAt, tz);
+          const rawMinutes =
+            dto.time !== undefined ? this.timeToMinutes(dto.time) : minutesOfDayInTz(existing.startsAt, tz);
+          if (Number.isNaN(rawMinutes)) throw new UnprocessableEntityException('Hora inválida.');
+          start = localDateTimeToUtc(dateISO, rawMinutes - (rawMinutes % 15), tz);
+        }
+        const durationMin =
+          dto.durationMin ?? Math.round((existing.endsAt.getTime() - existing.startsAt.getTime()) / 60_000);
+        const end = new Date(start.getTime() + durationMin * 60_000);
+        const partySize = dto.partySize ?? existing.partySize;
+
+        const tableIds =
+          dto.tableIds && dto.tableIds.length > 0
+            ? await this.forcedTables(tx, tenant, dto.tableIds, start, end, existing.id)
+            : await this.assignForWindowTx(tx, tenant, start, end, partySize, 'MANUAL', existing.id);
+
+        const result = await tx.reservation.updateMany({
+          where: { id, tenantId },
+          data: {
+            startsAt: start,
+            endsAt: end,
+            partySize,
+            customerName: dto.customerName ?? existing.customerName,
+            customerPhone: dto.customerPhone ?? existing.customerPhone,
+            customerEmail: dto.customerEmail !== undefined ? dto.customerEmail : existing.customerEmail,
+            notes: dto.notes !== undefined ? dto.notes : existing.notes,
+          },
+        });
+        if (result.count === 0) throw new NotFoundException('Reserva não encontrada.');
+
+        await tx.reservationTable.deleteMany({ where: { reservationId: id } });
+        await tx.reservationTable.createMany({
+          data: tableIds.map((tableId) => ({ reservationId: id, tableId })),
+        });
+
+        return tx.reservation.findUniqueOrThrow({
+          where: { id },
+          include: { tables: { include: { table: true } } },
+        });
+      },
+      { timeout: 15_000 },
+    );
+
+    this.gateway.emitReservationUpdated(tenantId, updated);
+    return updated;
+  }
+
+  /**
+   * Muda o estado (só a partir de CONFIRMED). CANCELLED → cancelledBy 'RESTAURANT' +
+   * email ao cliente se tiver email (socket primeiro, email com catch — nunca deita
+   * abaixo a resposta). NO_SHOW/COMPLETED → só socket.
+   */
+  async updateStatus(tenantId: string, id: string, dto: UpdateReservationStatusDto) {
+    const existing = await this.prisma.reservation.findFirst({
+      where: { id, tenantId },
+      include: { tenant: true },
+    });
+    if (!existing) throw new NotFoundException('Reserva não encontrada.');
+    if (existing.status !== ReservationStatus.CONFIRMED) {
+      throw new BadRequestException('Só é possível alterar o estado de reservas confirmadas.');
+    }
+
+    // guarda atómica: só transita se ainda estiver CONFIRMED (evita corrida entre painéis)
+    const result = await this.prisma.reservation.updateMany({
+      where: { id, tenantId, status: ReservationStatus.CONFIRMED },
+      data: {
+        status: dto.status as ReservationStatus,
+        ...(dto.status === 'CANCELLED' ? { cancelledBy: 'RESTAURANT' } : {}),
+      },
+    });
+    if (result.count === 0) {
+      throw new BadRequestException('Só é possível alterar o estado de reservas confirmadas.');
+    }
+
+    const updated = await this.prisma.reservation.findUniqueOrThrow({
+      where: { id },
+      include: { tables: { include: { table: true } } },
+    });
+    this.gateway.emitReservationUpdated(tenantId, updated);
+
+    if (dto.status === 'CANCELLED' && existing.customerEmail) {
+      const info = this.mailInfo(existing.tenant, updated);
+      void this.mail
+        .sendReservationCancelled(existing.customerEmail, existing.customerName, info, true)
+        .catch((e) => this.logger.error(`email de cancelamento (painel) falhou: ${e?.message ?? e}`));
+    }
+    return updated;
+  }
+
+  // ==========================================================================
+  // Painel — Janelas de reserva
+  // ==========================================================================
+
+  listWindows(tenantId: string) {
+    return this.prisma.reservationWindow.findMany({
+      where: { tenantId },
+      orderBy: [{ weekday: 'asc' }, { openMinute: 'asc' }],
+    });
+  }
+
+  /** Substitui a lista completa de janelas (máx. 2/weekday; fecho > abertura). */
+  async setWindows(tenantId: string, dto: SetWindowsDto) {
+    const perWeekday = new Map<number, number>();
+    for (const w of dto.windows) {
+      if (w.closeMinute <= w.openMinute) {
+        throw new BadRequestException(
+          `Janela inválida no dia ${w.weekday}: o fecho tem de ser depois da abertura.`,
+        );
+      }
+      const count = (perWeekday.get(w.weekday) ?? 0) + 1;
+      if (count > 2) throw new BadRequestException(`Máximo de 2 janelas por dia (dia ${w.weekday}).`);
+      perWeekday.set(w.weekday, count);
+    }
+    await this.prisma.$transaction([
+      this.prisma.reservationWindow.deleteMany({ where: { tenantId } }),
+      this.prisma.reservationWindow.createMany({
+        data: dto.windows.map((w) => ({
+          tenantId,
+          weekday: w.weekday,
+          openMinute: w.openMinute,
+          closeMinute: w.closeMinute,
+        })),
+      }),
+    ]);
+    return this.listWindows(tenantId);
+  }
+
+  // ==========================================================================
+  // Painel — Bloqueios de dia
+  // ==========================================================================
+
+  listBlocks(tenantId: string) {
+    return this.prisma.reservationBlock.findMany({ where: { tenantId }, orderBy: { date: 'asc' } });
+  }
+
+  async createBlock(tenantId: string, dto: CreateBlockDto) {
+    try {
+      return await this.prisma.reservationBlock.create({
+        data: { tenantId, date: dto.date, reason: dto.reason ?? null },
+      });
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+        throw new ConflictException('Esse dia já está bloqueado.');
+      }
+      throw e;
+    }
+  }
+
+  async deleteBlock(tenantId: string, id: string) {
+    const result = await this.prisma.reservationBlock.deleteMany({ where: { id, tenantId } });
+    if (result.count === 0) throw new NotFoundException('Bloqueio não encontrado.');
+    return { deleted: true };
   }
 }
