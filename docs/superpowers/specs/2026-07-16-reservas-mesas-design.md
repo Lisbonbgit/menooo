@@ -86,7 +86,7 @@ model ReservationTable {
   reservationId String
   reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
   tableId       String
-  table         Table       @relation(fields: [tableId], references: [id], onDelete: Restrict)
+  table         Table       @relation(fields: [tableId], references: [id], onDelete: Cascade)
   @@id([reservationId, tableId])
   @@index([tableId])
 }
@@ -127,8 +127,9 @@ model ReservationBlock {
 ```
 
 - **Apagar mesa:** recusa (409 "desativa a mesa em vez de apagar") se existir QUALQUER
-  `ReservationTable` histórica (integridade do histórico); além do pre-check, apanhar
-  `P2003` e mapear para o mesmo 409 (corrida pre-check→delete).
+  `ReservationTable` histórica (integridade do histórico); o 409 é garantido pelo
+  pre-check do service (count de ReservationTable) DENTRO da mesma transação/lock;
+  a FK é Cascade para não quebrar a cascata de exclusão de contas do admin.
 - **`endsAt` materializado** faz a sobreposição indexável; **o buffer aplica-se na
   query** (`startsAt < :end + buffer && endsAt + buffer > :start`... simplificado:
   comparar contra a janela alargada `[start - buffer, end + buffer)`), para poder mudar

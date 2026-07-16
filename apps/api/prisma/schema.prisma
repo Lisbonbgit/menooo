@@ -503,7 +503,7 @@ model ReservationTable {
   reservationId String
   reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
   tableId       String
-  table         Table       @relation(fields: [tableId], references: [id], onDelete: Restrict)
+  table         Table       @relation(fields: [tableId], references: [id], onDelete: Cascade)
   @@id([reservationId, tableId])
   @@index([tableId])
 }

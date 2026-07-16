@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dashboard",
+      "runtimeExecutable": "/Users/matheus.moraes/.local/node/bin/pnpm",
+      "runtimeArgs": ["--filter", "@comanda/dashboard", "dev"],
+      "port": 3002
+    }
+  ]
+}

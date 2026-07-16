@@ -638,7 +638,7 @@ export class ReservationsModule {}
 
 - [ ] **Step 2: Service (painel).** Regras obrigatórias:
   - Todos os updates/deletes `where: { id, tenantId }`; `tableIds` validados (`table.count({ where: { id: { in }, tenantId } }) === tableIds.length`, senão 400).
-  - `DELETE /tables/:id`: pre-check `reservationTable.count({ where: { tableId } })` → 409 `'Esta mesa tem reservas no histórico — desativa-a em vez de apagar.'`; apanhar também P2003 → mesmo 409.
+  - `DELETE /tables/:id`: pre-check `reservationTable.count({ where: { tableId } })` dentro do advisory lock → 409 `'Esta mesa tem reservas no histórico — desativa-a em vez de apagar.'`; a FK é Cascade de propósito (ver spec §3), não gera P2003.
   - **Manual** (`createManual`): advisory lock; ignora grelha/antecedências/máx.pax; hora arredondada a 15 min (`minutes - (minutes % 15)`); `durationMin ?? tenant.reservationDurationMin`; mesas forçadas validam só posse+ativa+não-sobreposição+máx.2 (aviso de capacidade é da UI); sem forçadas → `assignTables(..., 'MANUAL')` → 409 se null; `source:'MANUAL'`, `cancelTokenHash: null`, email/telefone opcionais. Pós-commit: alerta ao restaurante? NÃO (foi ele que criou) — só socket created.
   - **Edição** (`updateReservation`): lock; só CONFIRMED; recalcula start/end (duração explícita ou mantém a atual `endsAt-startsAt`); mesas: forçadas ou re-atribuição EXCLUINDO a própria reserva da ocupação; substitui `tables` (deleteMany + create). Sem email automático. Socket updated.
   - **Status**: transições só de CONFIRMED; `CANCELLED` → `cancelledBy:'RESTAURANT'` + email ao cliente SE tiver email + socket updated. NO_SHOW/COMPLETED → socket updated.
