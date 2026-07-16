@@ -269,6 +269,12 @@ export class ReservationsService {
     return t;
   }
 
+  /** Row de reserva para o painel/socket — sem o hash do token de cancelamento. */
+  private publicRow<T extends { cancelTokenHash?: string | null }>(row: T) {
+    const { cancelTokenHash: _drop, ...rest } = row;
+    return rest;
+  }
+
   // ==========================================================================
   // Criação pública (advisory lock; revalidação completa; emails pós-commit)
   // ==========================================================================
@@ -428,7 +434,7 @@ export class ReservationsService {
 
     // pós-update (fora de qualquer transação): socket primeiro; email nunca derruba um cancelamento já commitado
     const updated: ReservationWithTables = { ...row, status: ReservationStatus.CANCELLED, cancelledBy: 'CUSTOMER' };
-    this.gateway.emitReservationUpdated(row.tenantId, updated);
+    this.gateway.emitReservationUpdated(row.tenantId, this.publicRow(updated));
     this.afterCancel(row.tenant, row, updated).catch((e) =>
       this.logger.error(`pós-cancelamento de reserva falhou: ${e?.message ?? e}`),
     );
@@ -453,7 +459,7 @@ export class ReservationsService {
         notes: row.notes,
       });
     }
-    this.gateway.emitReservationCreated(tenant.id, row);
+    this.gateway.emitReservationCreated(tenant.id, this.publicRow(row));
   }
 
   /** Pós-cancelamento: email ao cliente + alerta ao restaurante (socket já emitido antes desta chamada). */
@@ -590,7 +596,7 @@ export class ReservationsService {
       include: { tables: { include: { table: { select: { name: true } } } } },
       orderBy: { startsAt: 'asc' },
     });
-    return rows.filter((r) => localDateISO(r.startsAt, tz) === dateISO);
+    return rows.filter((r) => localDateISO(r.startsAt, tz) === dateISO).map((r) => this.publicRow(r));
   }
 
   /**
@@ -633,8 +639,8 @@ export class ReservationsService {
       { timeout: 15_000 },
     );
 
-    this.gateway.emitReservationCreated(tenantId, row);
-    return row;
+    this.gateway.emitReservationCreated(tenantId, this.publicRow(row));
+    return this.publicRow(row);
   }
 
   /**
@@ -750,8 +756,8 @@ export class ReservationsService {
       { timeout: 15_000 },
     );
 
-    this.gateway.emitReservationUpdated(tenantId, updated);
-    return updated;
+    this.gateway.emitReservationUpdated(tenantId, this.publicRow(updated));
+    return this.publicRow(updated);
   }
 
   /**
@@ -785,7 +791,7 @@ export class ReservationsService {
       where: { id },
       include: { tables: { include: { table: true } } },
     });
-    this.gateway.emitReservationUpdated(tenantId, updated);
+    this.gateway.emitReservationUpdated(tenantId, this.publicRow(updated));
 
     if (dto.status === 'CANCELLED' && existing.customerEmail) {
       const info = this.mailInfo(existing.tenant, updated);
@@ -793,7 +799,7 @@ export class ReservationsService {
         .sendReservationCancelled(existing.customerEmail, existing.customerName, info, true)
         .catch((e) => this.logger.error(`email de cancelamento (painel) falhou: ${e?.message ?? e}`));
     }
-    return updated;
+    return this.publicRow(updated);
   }
 
   // ==========================================================================
