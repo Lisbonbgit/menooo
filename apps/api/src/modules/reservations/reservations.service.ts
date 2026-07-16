@@ -682,7 +682,10 @@ export class ReservationsService {
             where: { id, tenantId, status: ReservationStatus.CONFIRMED },
             data: {
               customerName: dto.customerName ?? existing.customerName,
-              customerPhone: dto.customerPhone ?? existing.customerPhone,
+              // `?? ''` porque customerPhone é String não-nula no schema: enviar null
+              // LIMPA o telefone (o `??` sozinho tratava null como "manter o antigo")
+              customerPhone:
+                dto.customerPhone !== undefined ? (dto.customerPhone ?? '') : existing.customerPhone,
               customerEmail: dto.customerEmail !== undefined ? dto.customerEmail : existing.customerEmail,
               notes: dto.notes !== undefined ? dto.notes : existing.notes,
             },
@@ -736,7 +739,10 @@ export class ReservationsService {
             endsAt: end,
             partySize,
             customerName: dto.customerName ?? existing.customerName,
-            customerPhone: dto.customerPhone ?? existing.customerPhone,
+            // `?? ''` porque customerPhone é String não-nula no schema: enviar null
+            // LIMPA o telefone (o `??` sozinho tratava null como "manter o antigo")
+            customerPhone:
+              dto.customerPhone !== undefined ? (dto.customerPhone ?? '') : existing.customerPhone,
             customerEmail: dto.customerEmail !== undefined ? dto.customerEmail : existing.customerEmail,
             notes: dto.notes !== undefined ? dto.notes : existing.notes,
           },
