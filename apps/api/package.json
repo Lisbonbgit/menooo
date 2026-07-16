@@ -24,6 +24,11 @@
   "prisma": {
     "seed": "ts-node -r tsconfig-paths/register prisma/seed.ts"
   },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node",
+    "roots": ["<rootDir>/src"]
+  },
   "dependencies": {
     "@nestjs/common": "^10.4.4",
     "@nestjs/config": "^3.2.3",
