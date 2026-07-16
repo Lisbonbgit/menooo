@@ -30,3 +30,6 @@ npm-debug.log*
 
 # uploads locais
 apps/api/uploads/
+
+# config local do Claude Code (dev tooling, não versionar)
+.claude/
