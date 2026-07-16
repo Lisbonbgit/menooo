@@ -3,6 +3,7 @@ import {
   ConflictException,
   HttpException,
   Injectable,
+  Logger,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
@@ -46,6 +47,8 @@ type TenantForMail = Pick<Tenant, 'id' | 'name' | 'slug' | 'timezone' | 'email' 
 
 @Injectable()
 export class ReservationsService {
+  private readonly logger = new Logger(ReservationsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly gateway: OrdersGateway,
@@ -86,7 +89,8 @@ export class ReservationsService {
       throw new BadRequestException('Parâmetros inválidos.');
     }
     const tenant = await this.gatedTenant(slug);
-    return this.slotsForDay(tenant, dateISO, party, 'ONLINE');
+    const result = await this.slotsForDay(tenant, dateISO, party, 'ONLINE');
+    return { ...result, slots: result.slots.map((s) => s.label) };
   }
 
   /** Variante fora de transação — delega em slotsForDayTx com this.prisma. */
@@ -106,7 +110,7 @@ export class ReservationsService {
     dateISO: string,
     party: number,
     channel: 'ONLINE' | 'MANUAL',
-  ): Promise<{ slots: string[]; reason?: string; contactPhone?: string | null }> {
+  ): Promise<{ slots: { label: string; start: Date }[]; reason?: string; contactPhone?: string | null }> {
     if (party > tenant.reservationMaxPartySize && channel === 'ONLINE')
       return { slots: [], reason: 'party', contactPhone: tenant.phone };
     const tz = tenant.timezone || 'Europe/Lisbon';
@@ -159,7 +163,7 @@ export class ReservationsService {
         slots.push({ label: hhmm(m), start });
       }
     }
-    return { slots: slots.map((s) => s.label) };
+    return { slots };
   }
 
   // ==========================================================================
@@ -212,53 +216,73 @@ export class ReservationsService {
     const minutes = this.timeToMinutes(dto.time); // "HH:MM" → int; 422 se NaN
     if (Number.isNaN(minutes)) throw new UnprocessableEntityException('Hora inválida.');
 
-    // cap anti-spam: máx. 2 reservas futuras confirmadas por contacto
-    const activeByContact = await this.prisma.reservation.count({
-      where: {
-        tenantId: tenant.id,
-        status: 'CONFIRMED',
-        startsAt: { gt: new Date() },
-        OR: [{ customerEmail: dto.customerEmail }, { customerPhone: dto.customerPhone }],
-      },
-    });
-    if (activeByContact >= 2) {
-      throw new HttpException('Já tens reservas ativas neste restaurante. Contacta-o diretamente.', 429);
+    // mensagem verdadeira para grupos grandes — nunca o 409 de "ocupado"
+    if (dto.partySize > tenant.reservationMaxPartySize) {
+      throw new UnprocessableEntityException(
+        `Para grupos de mais de ${tenant.reservationMaxPartySize} pessoas, contacta o restaurante diretamente.`,
+      );
     }
 
-    const created = await this.prisma.$transaction(async (tx) => {
-      // $queryRaw falha a desserializar a coluna `void` de pg_advisory_xact_lock
-      // (limitação conhecida do driver do Prisma) — $executeRaw não lê colunas.
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${tenant.id}))`;
-      // revalida o pipeline COMPLETO dentro do lock
-      const { slots } = await this.slotsForDayTx(tx, tenant, dto.date, dto.partySize, 'ONLINE');
-      if (!slots.includes(dto.time)) {
-        throw new ConflictException({
-          message: 'Esse horário acabou de ficar ocupado.',
-          alternatives: slots.slice(0, 4),
+    // 422 se a hora não cair na grelha das janelas do dia (sem filtro de ocupação/notice)
+    const grid = slotMinutes(this.windowsFor(tenant, weekdayOf(dto.date)));
+    if (minutes % 30 !== 0 || !grid.includes(minutes)) {
+      throw new UnprocessableEntityException('Hora inválida para reservas neste dia.');
+    }
+    const wanted = localDateTimeToUtc(dto.date, minutes, tz);
+
+    const created = await this.prisma.$transaction(
+      async (tx) => {
+        // $queryRaw falha a desserializar a coluna `void` de pg_advisory_xact_lock
+        // (limitação conhecida do driver do Prisma) — $executeRaw não lê colunas.
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${tenant.id}))`;
+
+        // cap anti-spam: máx. 2 reservas futuras confirmadas por contacto (dentro do lock)
+        const activeByContact = await tx.reservation.count({
+          where: {
+            tenantId: tenant.id,
+            status: 'CONFIRMED',
+            startsAt: { gt: new Date() },
+            OR: [{ customerEmail: dto.customerEmail }, { customerPhone: dto.customerPhone }],
+          },
         });
-      }
-      const start = localDateTimeToUtc(dto.date, minutes, tz);
-      const end = new Date(start.getTime() + tenant.reservationDurationMin * 60_000);
-      const tableIds = await this.assignForWindowTx(tx, tenant, start, end, dto.partySize, 'ONLINE');
-      const token = randomBytes(32).toString('hex');
-      const row = await this.createRowWithCode(tx, {
-        tenantId: tenant.id,
-        cancelTokenHash: sha256(token),
-        source: 'ONLINE',
-        partySize: dto.partySize,
-        startsAt: start,
-        endsAt: end,
-        customerName: dto.customerName,
-        customerPhone: dto.customerPhone,
-        customerEmail: dto.customerEmail,
-        notes: dto.notes ?? null,
-        marketingConsent: dto.marketingConsent ?? false,
-        tables: { create: tableIds.map((id) => ({ tableId: id })) },
-      });
-      return { row, token };
-    });
-    // pós-commit: emails + socket (nunca dentro da transação)
-    void this.afterCreate(tenant, created.row, created.token);
+        if (activeByContact >= 2) {
+          throw new HttpException('Já tens reservas ativas neste restaurante. Contacta-o diretamente.', 429);
+        }
+
+        // revalida o pipeline COMPLETO dentro do lock — comparação pelo INSTANTE, não pelo label
+        const { slots } = await this.slotsForDayTx(tx, tenant, dto.date, dto.partySize, 'ONLINE');
+        if (!slots.some((s) => s.start.getTime() === wanted.getTime())) {
+          throw new ConflictException({
+            message: 'Esse horário acabou de ficar ocupado.',
+            alternatives: slots.slice(0, 4).map((s) => s.label),
+          });
+        }
+        const start = wanted;
+        const end = new Date(start.getTime() + tenant.reservationDurationMin * 60_000);
+        const tableIds = await this.assignForWindowTx(tx, tenant, start, end, dto.partySize, 'ONLINE');
+        const token = randomBytes(32).toString('hex');
+        const row = await this.createRowWithCode(tx, {
+          tenantId: tenant.id,
+          cancelTokenHash: sha256(token),
+          source: 'ONLINE',
+          partySize: dto.partySize,
+          startsAt: start,
+          endsAt: end,
+          customerName: dto.customerName,
+          customerPhone: dto.customerPhone,
+          customerEmail: dto.customerEmail,
+          notes: dto.notes ?? null,
+          marketingConsent: dto.marketingConsent ?? false,
+          tables: { create: tableIds.map((id) => ({ tableId: id })) },
+        });
+        return { row, token };
+      },
+      { timeout: 15_000 },
+    );
+    // pós-commit: emails + socket (nunca dentro da transação) — falha nunca derruba um 201 já commitado
+    this.afterCreate(tenant, created.row, created.token).catch((e) =>
+      this.logger.error(`pós-criação de reserva falhou: ${e?.message ?? e}`),
+    );
     return this.publicView(tenant, created.row, created.token);
   }
 
@@ -328,17 +352,12 @@ export class ReservationsService {
     });
     if (result.count === 0) throw new BadRequestException('Esta reserva já não pode ser cancelada.');
 
-    // pós-update: email ao cliente + alerta ao restaurante + socket updated (fora de qualquer transação)
+    // pós-update (fora de qualquer transação): socket primeiro; email nunca derruba um cancelamento já commitado
     const updated: ReservationWithTables = { ...row, status: ReservationStatus.CANCELLED, cancelledBy: 'CUSTOMER' };
-    const info = this.mailInfo(row.tenant, updated);
-    if (row.customerEmail) {
-      void this.mail.sendReservationCancelled(row.customerEmail, row.customerName, info, false);
-    }
-    const notifyTo = await this.restaurantNotifyEmail(row.tenant);
-    if (notifyTo) {
-      void this.mail.sendReservationCancelledAlert(notifyTo, { ...info, customerName: row.customerName });
-    }
     this.gateway.emitReservationUpdated(row.tenantId, updated);
+    this.afterCancel(row.tenant, row, updated).catch((e) =>
+      this.logger.error(`pós-cancelamento de reserva falhou: ${e?.message ?? e}`),
+    );
     return { ok: true };
   }
 
@@ -361,6 +380,18 @@ export class ReservationsService {
       });
     }
     this.gateway.emitReservationCreated(tenant.id, row);
+  }
+
+  /** Pós-cancelamento: email ao cliente + alerta ao restaurante (socket já emitido antes desta chamada). */
+  private async afterCancel(tenant: TenantForMail, row: ReservationWithTables, updated: ReservationWithTables) {
+    const info = this.mailInfo(tenant, updated);
+    if (row.customerEmail) {
+      await this.mail.sendReservationCancelled(row.customerEmail, row.customerName, info, false);
+    }
+    const notifyTo = await this.restaurantNotifyEmail(tenant);
+    if (notifyTo) {
+      await this.mail.sendReservationCancelledAlert(notifyTo, { ...info, customerName: row.customerName });
+    }
   }
 
   /** `${STORE_URL}/${slug}/reserva/${code}#t=${token}` — fragmento `#` nunca chega a logs de servidor. */
