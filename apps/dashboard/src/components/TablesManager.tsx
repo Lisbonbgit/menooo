@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { clsx } from 'clsx';
 import { toast } from 'sonner';
 import { Armchair, Check, Eye, EyeOff, Pencil, Plus, Trash2, X } from 'lucide-react';
@@ -216,7 +216,7 @@ function Chip({ label, dot, text }: { label: string; dot: string; text: string }
 interface TableFormBody {
   name: string;
   seats: number;
-  area?: string;
+  area?: string | null;
   joinable: boolean;
   bookableOnline: boolean;
   sortOrder: number;
@@ -237,11 +237,12 @@ function TableForm({
 }) {
   const [name, setName] = useState(initial?.name ?? '');
   const [seats, setSeats] = useState(String(initial?.seats ?? 4));
-  const [area, setArea] = useState(initial?.area ?? '');
+  const [area, setArea] = useState<string | null>(initial?.area ?? null);
   const [joinable, setJoinable] = useState(initial?.joinable ?? false);
   const [bookableOnline, setBookableOnline] = useState(initial?.bookableOnline ?? true);
   const [sortOrder, setSortOrder] = useState(String(initial?.sortOrder ?? 0));
   const [saving, setSaving] = useState(false);
+  const areasListId = useId();
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -259,7 +260,7 @@ function TableForm({
       await onSubmit({
         name: name.trim(),
         seats: seatsNum,
-        area: area.trim() || undefined,
+        area: area?.trim() || null,
         joinable,
         bookableOnline,
         sortOrder: parseInt(sortOrder, 10) || 0,
@@ -305,13 +306,13 @@ function TableForm({
         <div className="min-w-40 flex-1 space-y-1.5">
           <label className="block text-[12px] font-medium text-ink-soft">Área (opcional)</label>
           <input
-            value={area}
-            onChange={(e) => setArea(e.target.value)}
+            value={area ?? ''}
+            onChange={(e) => setArea(e.target.value || null)}
             placeholder="Ex.: Esplanada"
-            list="tables-manager-areas"
+            list={areasListId}
             className="w-full rounded-xl border border-line bg-white px-3 py-2 text-[13.5px] outline-none focus:border-brand"
           />
-          <datalist id="tables-manager-areas">
+          <datalist id={areasListId}>
             {areas.map((a) => (
               <option key={a} value={a} />
             ))}
