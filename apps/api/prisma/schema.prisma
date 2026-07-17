@@ -107,7 +107,7 @@ model Account {
   trialEndsAt          DateTime? // fim do período de teste
   trialReminderSentAt  DateTime? // aviso de fim de teste já enviado (evita repetir)
   paidUntil            DateTime? // subscrição paga até esta data (estendida por pagamentos)
-  stripeCustomerId     String?   @unique
+  stripeCustomerId     String?       @unique
   stripeSubscriptionId String?
 
   users    User[]
@@ -123,17 +123,17 @@ model Account {
 // ----------------------------------------------------------------------------
 
 model Tenant {
-  id        String       @id @default(cuid())
-  accountId String // conta do dono (subscrição partilhada por várias unidades)
-  account   Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  slug      String       @unique // usado na loja pública: /loja/{slug}
-  name      String
+  id         String       @id @default(cuid())
+  accountId  String // conta do dono (subscrição partilhada por várias unidades)
+  account    Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  slug       String       @unique // usado na loja pública: /loja/{slug}
+  name       String
   logoUrl    String? // logótipo da loja (identidade na montra)
   coverUrl   String? // foto de capa da loja (topo da montra)
   brandColor String? // cor da marca na montra (hex #rrggbb); null = laranja Menooo
   heroColor  String? // cor do topo/cabeçalho da montra (hex); null = espresso
-  status    TenantStatus @default(PENDING)
-  plan      PlanType     @default(FREE)
+  status     TenantStatus @default(PENDING)
+  plan       PlanType     @default(FREE)
 
   // contacto / morada
   email   String?
@@ -143,13 +143,13 @@ model Tenant {
   zipCode String?
 
   // definições de loja
-  currency        String   @default("EUR")
-  timezone        String   @default("Europe/Lisbon")
-  acceptsDelivery Boolean  @default(true)
-  acceptsPickup   Boolean  @default(true)
-  deliveryFee     Decimal  @default(0) @db.Decimal(10, 2)
-  minOrderValue   Decimal  @default(0) @db.Decimal(10, 2)
-  isOpen          Boolean  @default(false) // toggle manual de aberto/fechado
+  currency        String  @default("EUR")
+  timezone        String  @default("Europe/Lisbon")
+  acceptsDelivery Boolean @default(true)
+  acceptsPickup   Boolean @default(true)
+  deliveryFee     Decimal @default(0) @db.Decimal(10, 2)
+  minOrderValue   Decimal @default(0) @db.Decimal(10, 2)
+  isOpen          Boolean @default(false) // toggle manual de aberto/fechado
 
   // emparelhamento do tablet de cozinha (código de uso-único, ver spec app-cozinha)
   kitchenPairId        String?   @unique // parte pública do código (lookup indexado)
@@ -165,18 +165,20 @@ model Tenant {
   reservationMinNoticeMin   Int     @default(60)
   reservationMaxAdvanceDays Int     @default(30)
   reservationMaxPartySize   Int     @default(12) // só canal ONLINE
+  reservationGraceMin       Int     @default(15) // tolerância de atraso: só comunica, não liberta a mesa
 
-  categories         Category[]
-  products           Product[]
-  orders             Order[]
-  openingHours       OpeningHour[]
-  deliveryZones      DeliveryZone[]
-  coupons            Coupon[]
-  modifierGroups     ModifierGroup[]
-  tables             Table[]
-  reservations       Reservation[]
-  reservationWindows ReservationWindow[]
-  reservationBlocks  ReservationBlock[]
+  categories          Category[]
+  products            Product[]
+  orders              Order[]
+  openingHours        OpeningHour[]
+  deliveryZones       DeliveryZone[]
+  coupons             Coupon[]
+  modifierGroups      ModifierGroup[]
+  tables              Table[]
+  reservations        Reservation[]
+  reservationWindows  ReservationWindow[] // EXPAND: substituída pela ReservationService; o DROP fica para um ciclo posterior
+  reservationServices ReservationService[]
+  reservationBlocks   ReservationBlock[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -237,11 +239,11 @@ model Coupon {
 
 // horário de funcionamento — uma faixa por dia da semana (0=Dom … 6=Sáb)
 model OpeningHour {
-  id         String @id @default(cuid())
-  tenantId   String
-  tenant     Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  weekday    Int // 0..6
-  openMinute Int // minutos desde a meia-noite (ex.: 12:00 = 720)
+  id          String @id @default(cuid())
+  tenantId    String
+  tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  weekday     Int // 0..6
+  openMinute  Int // minutos desde a meia-noite (ex.: 12:00 = 720)
   closeMinute Int // ex.: 23:00 = 1380
 
   @@unique([tenantId, weekday])
@@ -286,13 +288,13 @@ model User {
 }
 
 model RefreshToken {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tokenHash String   @unique
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
   expiresAt DateTime
   revokedAt DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   @@index([userId])
 }
@@ -460,30 +462,34 @@ model OrderItemModifier {
 // ----------------------------------------------------------------------------
 
 model Table {
-  id             String  @id @default(cuid())
+  id             String             @id @default(cuid())
   tenantId       String
-  tenant         Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant         Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name           String
   area           String? // juntar só dentro da mesma área não-nula
   seats          Int
-  joinable       Boolean @default(false)
-  bookableOnline Boolean @default(true) // false = só atribuível em reservas MANUAL
-  active         Boolean @default(true)
-  sortOrder      Int     @default(0)
+  joinable       Boolean            @default(false)
+  bookableOnline Boolean            @default(true) // false = só atribuível em reservas MANUAL
+  active         Boolean            @default(true)
+  sortOrder      Int                @default(0)
+  x              Int? // coluna no mapa de sala (0..7); null = ainda não colocada
+  y              Int? // linha no mapa de sala; null = ainda não colocada
+  shape          String             @default("square") // 'square' | 'round' — só leitura visual
   reservations   ReservationTable[]
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
   @@index([tenantId])
 }
 
 model Reservation {
-  id               String            @id @default(cuid())
+  id               String             @id @default(cuid())
   tenantId         String
-  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  code             String            @unique // base32 6 chars; P2002 → re-gerar (padrão kitchenPairCode)
+  tenant           Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  code             String             @unique // base32 6 chars; P2002 → re-gerar (padrão kitchenPairCode)
   cancelTokenHash  String? // sha256 hex do token (NÃO argon2 — token tem 256 bits, ver §7)
-  status           ReservationStatus @default(CONFIRMED)
-  source           String            @default("ONLINE") // ONLINE | MANUAL
+  status           ReservationStatus  @default(CONFIRMED)
+  source           String             @default("ONLINE") // ONLINE | MANUAL
   partySize        Int
   startsAt         DateTime // UTC
   endsAt           DateTime // UTC — materializado (inclui duração; o buffer soma-se NA QUERY)
@@ -495,11 +501,12 @@ model Reservation {
   contactEmailKey  String? // trim + lowercase
   contactPhoneKey  String? // só dígitos, últimos 9
   notes            String?
-  marketingConsent Boolean           @default(false) // consistente com Order (registo RGPD)
+  marketingConsent Boolean            @default(false) // consistente com Order (registo RGPD)
   cancelledBy      String? // CUSTOMER | RESTAURANT
   tables           ReservationTable[]
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
   @@index([tenantId, startsAt])
   @@index([tenantId, contactEmailKey])
   @@index([tenantId, contactPhoneKey])
@@ -510,12 +517,16 @@ model ReservationTable {
   reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
   tableId       String
   table         Table       @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
   @@id([reservationId, tableId])
   @@index([tableId])
 }
 
 /// Janela de SEATING para reservas (até 2 por weekday, imposto no service).
 /// Sem janelas definidas para um weekday → fallback ao OpeningHour desse dia.
+/// SUBSTITUÍDA pela ReservationService (R4). Fica de pé de propósito: o código deixa de a ler,
+/// mas o DROP só acontece num ciclo posterior, depois de a R4 estar provada em produção — assim
+/// um rollback de imagem para a R3 ainda encontra a tabela que lê.
 model ReservationWindow {
   id          String @id @default(cuid())
   tenantId    String
@@ -523,16 +534,33 @@ model ReservationWindow {
   weekday     Int // 0=domingo … 6=sábado (mesma convenção do OpeningHour)
   openMinute  Int
   closeMinute Int // último slot COMEÇA em closeMinute (janela de seating, não de estadia)
+
   @@index([tenantId, weekday])
+}
+
+/// Serviço com nome ("Almoço", "Jantar") e os dias em que corre. Sucede à ReservationWindow:
+/// um serviço traz vários weekdays, em vez de uma linha por dia.
+model ReservationService {
+  id          String @id @default(cuid())
+  tenantId    String
+  tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name        String // livre — é o dono que decide
+  weekdays    Int[] // 0=domingo … 6=sábado (mesma convenção do OpeningHour)
+  openMinute  Int
+  closeMinute Int // último slot COMEÇA em closeMinute (janela de seating, não de estadia)
+  sortOrder   Int    @default(0)
+
+  @@index([tenantId])
 }
 
 /// Dia inteiro sem reservas online (feriado, evento privado, "pausar hoje").
 model ReservationBlock {
-  id       String  @id @default(cuid())
-  tenantId String
-  tenant   Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  date     String // YYYY-MM-DD na timezone do tenant (dia LOCAL)
-  reason   String?
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  date      String // YYYY-MM-DD na timezone do tenant (dia LOCAL)
+  reason    String?
   createdAt DateTime @default(now())
+
   @@unique([tenantId, date])
 }
