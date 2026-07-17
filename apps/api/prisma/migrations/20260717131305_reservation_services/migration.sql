@@ -65,13 +65,16 @@ INSERT INTO "ReservationService" ("id", "tenantId", "name", "weekdays", "openMin
 SELECT
   'rs_' || md5(g."tenantId" || '_' || g."openMinute" || '_' || g."closeMinute"),
   g."tenantId",
-  -- nome com a hora SEMPRE que houver mais do que um grupo do mesmo lado das 17:00:
-  -- o teto real é 2 janelas x 7 weekdays = até 14 grupos, e não há @@unique no name.
+  -- nome com o INTERVALO (abre–fecha) sempre que houver mais do que um grupo do mesmo lado das
+  -- 17:00: o teto real é 2 janelas x 7 weekdays = até 14 grupos e não há @@unique no name. O
+  -- sufixo tem de incluir o FECHO, não só a abertura — dois grupos com a mesma hora de abertura
+  -- e fecho diferente (ex. 12:00–14:30 e 12:00–15:00) receberiam nomes idênticos.
   CASE WHEN (SELECT count(*) FROM grupos g2
              WHERE g2."tenantId" = g."tenantId"
                AND (g2."openMinute" < 1020) = (g."openMinute" < 1020)) > 1
        THEN (CASE WHEN g."openMinute" < 1020 THEN 'Almoço ' ELSE 'Jantar ' END)
             || lpad((g."openMinute" / 60)::text, 2, '0') || ':' || lpad((g."openMinute" % 60)::text, 2, '0')
+            || '–' || lpad((g."closeMinute" / 60)::text, 2, '0') || ':' || lpad((g."closeMinute" % 60)::text, 2, '0')
        ELSE (CASE WHEN g."openMinute" < 1020 THEN 'Almoço' ELSE 'Jantar' END)
   END,
   g.weekdays,

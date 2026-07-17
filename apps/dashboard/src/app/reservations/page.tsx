@@ -306,7 +306,11 @@ export default function ReservationsPage() {
               {service ? (
                 <TimelineCursor
                   service={service}
-                  tables={tables}
+                  // Só as mesas da área VISÍVEL (spec §7): a barra é a lotação da sala que estás
+                  // a ver. Passar todas dava um denominador de outra área e barras que não batiam
+                  // com o mapa por baixo. As reservas ficam todas — o occupancyOfSlot só conta as
+                  // que caem nestas mesas.
+                  tables={tables.filter((t) => (t.area ?? null) === area)}
                   reservations={reservations}
                   cursorAt={cursorAt}
                   onCursorChange={(d: Date) => setCursor({ key: cursorKey, min: minuteOfDate(d) })}

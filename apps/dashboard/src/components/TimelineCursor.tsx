@@ -116,8 +116,11 @@ export function TimelineCursor({
   const config = useTenantConfig();
   // A mesma regra do servidor (`occupiedAt` em apps/api/src/modules/reservations/days.util.ts):
   // a duração e o buffer é que dizem se a mesa está ocupada. Os fallbacks são os do tenant.
-  const durMs = (config.data?.reservationDurationMin ?? 90) * 60_000;
-  const bufMs = (config.data?.reservationBufferMin ?? 15) * 60_000;
+  // Fallbacks ALINHADOS com o schema do servidor (@default 120/0) e com o FloorMap. 90/15 fazia
+  // a timeline calcular a ocupação por uma regra diferente da do mapa por baixo — a barra dizia
+  // uma coisa e as mesas mostravam outra.
+  const durMs = (config.data?.reservationDurationMin ?? 120) * 60_000;
+  const bufMs = (config.data?.reservationBufferMin ?? 0) * 60_000;
 
   const slots = useMemo(() => slotsOf(service), [service.openMinute, service.closeMinute]);
 

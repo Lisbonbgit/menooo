@@ -112,4 +112,12 @@ export class UpdateTenantDto {
   @Min(1)
   @Max(50)
   reservationMaxPartySize?: number;
+
+  // Tolerância de atraso (R4). SEM esta linha, o PATCH que o painel envia é rejeitado INTEIRO
+  // com 400 pelo forbidNonWhitelisted — não só o campo, as Definições de reservas todas.
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(120)
+  reservationGraceMin?: number;
 }

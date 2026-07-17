@@ -70,7 +70,10 @@ type ReservationWithTables = Prisma.ReservationGetPayload<{
 }>;
 
 /** Subconjunto do Tenant necessário para emails/manageUrl (aceita tenant "cheio" ou só relação). */
-type TenantForMail = Pick<Tenant, 'id' | 'name' | 'slug' | 'timezone' | 'email' | 'accountId'>;
+type TenantForMail = Pick<
+  Tenant,
+  'id' | 'name' | 'slug' | 'timezone' | 'email' | 'accountId' | 'reservationGraceMin'
+>;
 
 @Injectable()
 export class ReservationsService {
@@ -624,6 +627,10 @@ export class ReservationsService {
       partySize: row.partySize,
       tableNames: row.tables.map((rt) => rt.table.name),
       manageUrl: token ? this.manageUrl(tenant.slug, row.code, token) : undefined,
+      // «A tua mesa fica guardada X minutos» no email de confirmação (R4). O gatedTenant traz o
+      // tenant inteiro, logo o campo está cá; se um dia algum chamador passar um tenant só-relação
+      // sem este campo, o `?? undefined` faz a frase simplesmente não aparecer (é opcional).
+      graceMin: tenant.reservationGraceMin ?? undefined,
     };
   }
 
