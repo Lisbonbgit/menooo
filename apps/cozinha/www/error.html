@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="pt">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Menooo Cozinha</title>
+    <!--
+      AUTO-CONTIDO DE PROPÓSITO: sem rede, qualquer <link>, <script src> ou <img>
+      externo resolve para https://localhost/... e falha (ERR_CONNECTION_REFUSED),
+      deixando este ecrã sem estilo e possivelmente sem o botão. CSS e JS inline,
+      zero referências externas.
+    -->
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #231a13;
+        color: #f3ebdf;
+        font-family: -apple-system, system-ui, 'Segoe UI', Roboto, sans-serif;
+        padding: 24px;
+        text-align: center;
+      }
+      .card {
+        max-width: 420px;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0 0 12px;
+        font-weight: 600;
+      }
+      p {
+        font-size: 15px;
+        line-height: 1.55;
+        color: #a2937f;
+        margin: 0 0 24px;
+      }
+      button {
+        background: #e05a1e;
+        color: #fff;
+        border: 0;
+        border-radius: 12px;
+        padding: 14px 28px;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button:active {
+        transform: scale(0.98);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Não foi possível abrir o painel</h1>
+      <p>
+        Verifica se o tablet está ligado à internet e tenta de novo. Se o problema
+        continuar, avisa o responsável.
+      </p>
+      <button onclick="location.href='https://painel.menooo.com'">Tentar de novo</button>
+    </div>
+  </body>
+</html>

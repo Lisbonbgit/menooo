@@ -13,6 +13,8 @@ const RESERVED = new Set([
   'checkout',
   'painel',
   'menooo',
+  // página de download do APK da app de cozinha (/cozinha na storefront)
+  'cozinha',
 ]);
 
 export function isReservedSlug(slug: string): boolean {
