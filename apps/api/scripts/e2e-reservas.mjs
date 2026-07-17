@@ -223,6 +223,9 @@ async function main() {
   let ownerToken;
   let tenantId;
   let originalConfig;
+  // R4: weekday para o qual a secção 27 cria um OpeningHour por prisma direto (a demo tem 0).
+  // Guardado aqui para o finally o apagar — a demo não deve ganhar horário nenhum entre corridas.
+  let r4OpeningWeekday = null;
 
   try {
     // =========================================================================
@@ -882,10 +885,204 @@ async function main() {
       mesmoCliente.slice(0, 5).every((s) => s === 400) && mesmoCliente.slice(5).every((s) => s === 429),
       `got ${JSON.stringify(mesmoCliente)}`,
     );
+
+    // #########################################################################
+    // R4 — Serviços com nome, mapa de sala (layout), papéis e fallback (R4-T10)
+    //
+    // Todas as datas destes pontos usam weekdays DISTINTOS de WEEKDAY. As datas dos pontos 1–25
+    // são +7 entre si (o MESMO weekday), por isso um weekday diferente garante datas que não
+    // colidem com nenhuma reserva anterior — o que se cria aqui não mexe na grelha já testada.
+    // #########################################################################
+
+    // Os pontos 24–25 deixaram as reservas DESLIGADAS. Os checks de slots/fallback e o payload
+    // público desta secção precisam-nas ligadas — e há mesas reserváveis, logo a guarda de
+    // prontidão deixa religar.
+    const r4Enable = await req('PATCH', '/tenants/me', {
+      token: ownerToken,
+      body: { reservationsEnabled: true },
+    });
+    check('R4: religar reservas p/ os testes → 200', r4Enable.status === 200, `got ${r4Enable.status} ${JSON.stringify(r4Enable.json)}`);
+
+    // =========================================================================
+    // 26. CRUD de serviços + validação de sobreposição no mesmo weekday
+    // =========================================================================
+    console.log('— 26. CRUD de serviços + sobreposição no mesmo weekday → 400');
+    const R4_DATE_CRUD = addDaysISO(DATE_A, 2); // weekday (WEEKDAY+2)%7 — distinto de tudo acima
+    const R4_WD_CRUD = weekdayOf(R4_DATE_CRUD);
+    check('weekday do CRUD é distinto de WEEKDAY (isolamento)', R4_WD_CRUD !== WEEKDAY, `${R4_WD_CRUD} vs ${WEEKDAY}`);
+
+    const svcCreate = await req('POST', '/reservation-services', {
+      token: ownerToken,
+      body: { name: 'Almoço R4', weekdays: [R4_WD_CRUD], openMinute: 720, closeMinute: 870 }, // 12:00–14:30
+    });
+    check('POST serviço 201', svcCreate.status === 201, `got ${svcCreate.status} ${JSON.stringify(svcCreate.json)}`);
+    const svcCrudId = svcCreate.json?.id;
+    const svcListed = await req('GET', '/reservation-services', { token: ownerToken });
+    check('GET /reservation-services inclui o serviço criado', (svcListed.json ?? []).some((s) => s.id === svcCrudId), JSON.stringify(svcListed.json));
+    // PATCH parcial (só o nome): a ARMADILHA do undefined — o merge campo-a-campo tem de manter as
+    // horas, não apagá-las.
+    const svcPatch = await req('PATCH', `/reservation-services/${svcCrudId}`, { token: ownerToken, body: { name: 'Almoço R4 renomeado' } });
+    check('PATCH nome do serviço 200', svcPatch.status === 200, `got ${svcPatch.status} ${JSON.stringify(svcPatch.json)}`);
+    check(
+      'nome atualizado e horas INTACTAS (PATCH parcial não apaga o resto)',
+      svcPatch.json?.name === 'Almoço R4 renomeado' && svcPatch.json?.openMinute === 720 && svcPatch.json?.closeMinute === 870,
+      JSON.stringify(svcPatch.json),
+    );
+    // 2º serviço no MESMO weekday mas SEM sobreposição → 201 (dois serviços/dia são legais)
+    const svcSecond = await req('POST', '/reservation-services', {
+      token: ownerToken,
+      body: { name: 'Jantar R4', weekdays: [R4_WD_CRUD], openMinute: 1140, closeMinute: 1320 }, // 19:00–22:00
+    });
+    check('2º serviço não sobreposto no mesmo weekday 201', svcSecond.status === 201, `got ${svcSecond.status} ${JSON.stringify(svcSecond.json)}`);
+    const svcSecondId = svcSecond.json?.id;
+    // sobreposição no MESMO weekday → 400 (validação NOVA da R4)
+    const svcOverlap = await req('POST', '/reservation-services', {
+      token: ownerToken,
+      body: { name: 'Sobreposto', weekdays: [R4_WD_CRUD], openMinute: 800, closeMinute: 1000 }, // 13:20–16:40 cai dentro do 1º
+    });
+    check('serviço sobreposto no mesmo weekday → 400', svcOverlap.status === 400, `got ${svcOverlap.status} ${JSON.stringify(svcOverlap.json)}`);
+    check('mensagem de sobreposição é clara', typeof svcOverlap.json?.message === 'string' && svcOverlap.json.message.includes('sobrepõe'), JSON.stringify(svcOverlap.json));
+    // apagar os dois — o endpoint DELETE devolve 200 e deixa o weekday limpo
+    const svcDel1 = await req('DELETE', `/reservation-services/${svcCrudId}`, { token: ownerToken });
+    const svcDel2 = await req('DELETE', `/reservation-services/${svcSecondId}`, { token: ownerToken });
+    check('DELETE dos dois serviços → 200', svcDel1.status === 200 && svcDel2.status === 200, `got ${svcDel1.status}/${svcDel2.status}`);
+
+    // =========================================================================
+    // 27. /reservation-services/day sintético + apagar o último serviço cai no fallback
+    // =========================================================================
+    console.log('— 27. /day sintético + apagar o último serviço → dia corre pelo fallback');
+    const R4_DATE_FB = addDaysISO(DATE_A, 3); // weekday (WEEKDAY+3)%7
+    const R4_WD_FB = weekdayOf(R4_DATE_FB);
+    check('weekday do fallback é distinto (isolamento)', R4_WD_FB !== WEEKDAY && R4_WD_FB !== R4_WD_CRUD, `${R4_WD_FB}`);
+    // O fallback (§5 do spec) é o OpeningHour−60. A demo tem 0 horários, logo sem isto o sintético
+    // sairia VAZIO e o teste passava sem tocar no problema (a mesma armadilha do «0 linhas» do §4.2).
+    // Cria-se um horário 12:00–22:00 SÓ neste weekday, por prisma direto — a exceção já documentada
+    // no cabeçalho para montar pré-requisitos sem endpoint. O finally apaga-o.
+    r4OpeningWeekday = R4_WD_FB;
+    await prisma.openingHour.upsert({
+      where: { tenantId_weekday: { tenantId, weekday: R4_WD_FB } },
+      create: { tenantId, weekday: R4_WD_FB, openMinute: 720, closeMinute: 1320 },
+      update: { openMinute: 720, closeMinute: 1320 },
+    });
+
+    // dia SEM serviços → o /day devolve o sintético do horário de abertura, com synthetic:true
+    const daySynthetic = await req('GET', `/reservation-services/day?date=${R4_DATE_FB}`, { token: ownerToken });
+    check('GET /day (dia sem serviços) 200', daySynthetic.status === 200, `got ${daySynthetic.status}`);
+    check('/day devolve exatamente 1 serviço sintético', (daySynthetic.json ?? []).length === 1, JSON.stringify(daySynthetic.json));
+    const synth = daySynthetic.json?.[0];
+    check('sintético tem synthetic:true', synth?.synthetic === true, JSON.stringify(synth));
+    check('sintético chama-se "Horário de abertura"', synth?.name === 'Horário de abertura', JSON.stringify(synth));
+    check(
+      'sintético é OpeningHour−60 (720–1260), id synthetic-<wd>',
+      synth?.openMinute === 720 && synth?.closeMinute === 1260 && synth?.id === `synthetic-${R4_WD_FB}`,
+      JSON.stringify(synth),
+    );
+
+    // criar UM serviço estreito → o /day passa a real e a grelha segue-o
+    const fbSvc = await req('POST', '/reservation-services', {
+      token: ownerToken,
+      body: { name: 'Almoço curto', weekdays: [R4_WD_FB], openMinute: 720, closeMinute: 870 }, // 12:00–14:30
+    });
+    check('serviço estreito criado 201', fbSvc.status === 201, `got ${fbSvc.status} ${JSON.stringify(fbSvc.json)}`);
+    const fbSvcId = fbSvc.json?.id;
+    const dayReal = await req('GET', `/reservation-services/day?date=${R4_DATE_FB}`, { token: ownerToken });
+    check('/day com serviço → synthetic:false e é o serviço criado', dayReal.json?.[0]?.synthetic === false && dayReal.json?.[0]?.id === fbSvcId, JSON.stringify(dayReal.json));
+    const slotsSvc = await slotsSafe(R4_DATE_FB, 2);
+    check('com serviço 12:00–14:30: slot 14:30 presente', slotsSvc.json?.slots?.includes('14:30'), JSON.stringify(slotsSvc.json));
+    check('com serviço 12:00–14:30: slot 15:00 AUSENTE', !slotsSvc.json?.slots?.includes('15:00'), JSON.stringify(slotsSvc.json));
+
+    // apagar o ÚLTIMO serviço do dia → o dia passa a correr pelo FALLBACK: exatamente a consequência
+    // que o aviso do painel descreve («abre o dia todo, 15:00 com a cozinha fechada incluído»).
+    const fbDelete = await req('DELETE', `/reservation-services/${fbSvcId}`, { token: ownerToken });
+    check('apagar o último serviço do dia → 200', fbDelete.status === 200, `got ${fbDelete.status}`);
+    const dayAfter = await req('GET', `/reservation-services/day?date=${R4_DATE_FB}`, { token: ownerToken });
+    check('após apagar: /day volta ao sintético (synthetic:true)', dayAfter.json?.[0]?.synthetic === true, JSON.stringify(dayAfter.json));
+    const slotsFallback = await slotsSafe(R4_DATE_FB, 2);
+    check('após apagar: slot 15:00 PASSA a existir (segue o horário de abertura)', slotsFallback.json?.slots?.includes('15:00'), JSON.stringify(slotsFallback.json));
+
+    // =========================================================================
+    // 28. PUT /tables/layout: área inteira, célula duplicada → 400, mesa de outro tenant → 404
+    // =========================================================================
+    console.log('— 28. PUT /tables/layout (área inteira, transação, tenancy)');
+    const layoutOk = await req('PUT', '/tables/layout', {
+      token: ownerToken,
+      body: { area: 'Sala', positions: [{ id: m2Id, x: 0, y: 0 }, { id: m2bId, x: 1, y: 0 }, { id: m4Id, x: 2, y: 0 }] },
+    });
+    check('PUT layout (Sala, 3 mesas) 200', layoutOk.status === 200, `got ${layoutOk.status} ${JSON.stringify(layoutOk.json)}`);
+    check('layout gravou 3 posições', layoutOk.json?.saved === 3, JSON.stringify(layoutOk.json));
+    const tablesAfterLayout = await req('GET', '/tables', { token: ownerToken });
+    const m4Row = (tablesAfterLayout.json ?? []).find((t) => t.id === m4Id);
+    check('posição persistiu (m4 x=2,y=0)', m4Row?.x === 2 && m4Row?.y === 0, JSON.stringify({ x: m4Row?.x, y: m4Row?.y }));
+    // duas mesas na MESMA célula → 400 (rejeitado ANTES de qualquer escrita)
+    const layoutCollision = await req('PUT', '/tables/layout', {
+      token: ownerToken,
+      body: { area: 'Sala', positions: [{ id: m2Id, x: 0, y: 0 }, { id: m2bId, x: 0, y: 0 }] },
+    });
+    check('duas mesas na mesma célula → 400', layoutCollision.status === 400, `got ${layoutCollision.status} ${JSON.stringify(layoutCollision.json)}`);
+    // mesa de OUTRO tenant no lote → 404 (o count filtra por tenantId+area; a transação não escreve nada)
+    const foreignTable = await req('POST', '/tables', { token: tokenB, body: { name: 'Mesa Tenant B', seats: 2 } });
+    check('mesa criada no tenant B (setup do 404) 201', foreignTable.status === 201, `got ${foreignTable.status} ${JSON.stringify(foreignTable.json)}`);
+    const layoutForeign = await req('PUT', '/tables/layout', {
+      token: ownerToken,
+      body: { area: 'Sala', positions: [{ id: m2Id, x: 0, y: 0 }, { id: foreignTable.json.id, x: 1, y: 0 }] },
+    });
+    check('mesa de outro tenant no layout → 404', layoutForeign.status === 404, `got ${layoutForeign.status} ${JSON.stringify(layoutForeign.json)}`);
+    await req('DELETE', `/tables/${foreignTable.json.id}`, { token: tokenB }); // limpar a mesa virgem do tenant B
+
+    // =========================================================================
+    // 29. Mudar a área de uma mesa limpa a posição (x,y → null)
+    // =========================================================================
+    console.log('— 29. mudar de área anula x,y');
+    // m4 ficou em "Sala" com x=2,y=0 (ponto 28). Movê-la para "Esplanada" tem de anular x,y —
+    // senão aterrava em cima de uma mesa da sala nova sem ninguém a ter arrastado.
+    const preMove = (await req('GET', '/tables', { token: ownerToken })).json?.find((t) => t.id === m4Id);
+    check('pré-condição: m4 tem posição antes de mudar de área', preMove?.x !== null && preMove?.x !== undefined, JSON.stringify({ x: preMove?.x, y: preMove?.y }));
+    const moveArea = await req('PATCH', `/tables/${m4Id}`, { token: ownerToken, body: { area: 'Esplanada' } });
+    check('PATCH área da mesa 200', moveArea.status === 200, `got ${moveArea.status} ${JSON.stringify(moveArea.json)}`);
+    check('mudar de área anulou x e y', moveArea.json?.x === null && moveArea.json?.y === null, JSON.stringify({ x: moveArea.json?.x, y: moveArea.json?.y }));
+    check('e a área passou a Esplanada', moveArea.json?.area === 'Esplanada', JSON.stringify(moveArea.json?.area));
+
+    // =========================================================================
+    // 30. KITCHEN não chega ao PUT /tables/layout → 403
+    //     O RolesGuard falha ABERTO (`if (!required) return true`): este é o ÚNICO teste que prova
+    //     que o @Roles está no endpoint. Sem o decorador, o tablet da cozinha gravaria a sala.
+    // =========================================================================
+    console.log('— 30. KITCHEN → PUT /tables/layout → 403 (prova o @Roles)');
+    // Token de cozinha FRESCO: o do ponto 19 tem TTL de 5m e os sleeps de 61s podem tê-lo expirado
+    // — um token expirado daria 401 (JwtAuthGuard) e mascararia o que se quer provar (o 403 do papel).
+    const genK2 = await req('POST', '/tenants/me/kitchen/pair-code', { token: ownerToken });
+    const pairK2 = await req('POST', '/auth/kitchen/pair', { body: { code: genK2.json?.code } });
+    check('token de cozinha fresco obtido (pair) 201', pairK2.status === 201, `got ${pairK2.status} ${JSON.stringify(pairK2.json)}`);
+    const kToken2 = pairK2.json?.accessToken;
+    const kitchenLayout = await req('PUT', '/tables/layout', {
+      token: kToken2,
+      body: { area: 'Sala', positions: [] }, // corpo mínimo: o guard corre ANTES da validação
+    });
+    check('KITCHEN → PUT /tables/layout → 403 (e não 401/200)', kitchenLayout.status === 403, `got ${kitchenLayout.status} ${JSON.stringify(kitchenLayout.json)}`);
+
+    // =========================================================================
+    // 31. reservationGraceMin no payload público só com reservationsEnabled
+    // =========================================================================
+    console.log('— 31. reservationGraceMin no payload público só com reservas ligadas');
+    const storeOn = await req('GET', `/public/stores/${SLUG}`);
+    check('GET /public/stores/:slug (reservas ON) 200', storeOn.status === 200, `got ${storeOn.status}`);
+    check('reservationGraceMin presente com reservas ligadas', typeof storeOn.json?.reservationGraceMin === 'number', JSON.stringify(storeOn.json?.reservationGraceMin));
+    const disableForGrace = await req('PATCH', '/tenants/me', { token: ownerToken, body: { reservationsEnabled: false } });
+    check('desligar reservas 200', disableForGrace.status === 200, `got ${disableForGrace.status}`);
+    const storeOff = await req('GET', `/public/stores/${SLUG}`);
+    check('GET /public/stores/:slug (reservas OFF) 200', storeOff.status === 200, `got ${storeOff.status}`);
+    check('reservationGraceMin AUSENTE com reservas desligadas', !('reservationGraceMin' in (storeOff.json ?? {})), JSON.stringify(storeOff.json));
   } catch (e) {
     console.error('erro fatal durante os testes:', e);
     failed++;
   } finally {
+    // O horário que a secção 27 criou por prisma direto sai aqui: a demo não tinha nenhum e não
+    // deve ficar com um a mudar a grelha das corridas seguintes (a cleanup normal não mexe em horários).
+    if (r4OpeningWeekday !== null && tenantId) {
+      await prisma.openingHour
+        .deleteMany({ where: { tenantId, weekday: r4OpeningWeekday } })
+        .catch((e) => console.error('  limpeza do OpeningHour da R4 falhou:', e?.message ?? e));
+    }
     await cleanup(prisma, tenantId, ownerToken, originalConfig);
     await prisma.$disconnect();
   }
