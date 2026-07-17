@@ -19,6 +19,12 @@
  *   com pacing (sleeps ~13s entre grupos de até 5 POSTs) + retry único em caso de
  *   429. Desde a R3 o cap por contacto é 409 (CONTACT_CAP), logo TODO o 429 é do
  *   throttle — já não é preciso distingui-los pela mensagem.
+ * - Cada balde do throttle é por HANDLER (slots 30/min, days 30/min, POST 5/min,
+ *   GET/cancel por code 10/min), por isso os pontos 23 e 25 pedem baldes limpos e
+ *   pagam um sleep de 61s cada um: o teste do lote gasta 30 GETs de slots de uma vez
+ *   e o tracker do throttle precisa que o 6.º POST seja inequivocamente o 6.º.
+ * - Viajar no tempo (TTL do token, cancelamento tardio) não tem endpoint: o ponto 22
+ *   mexe em startsAt/endsAt por prisma direto, a mesma exceção documentada abaixo.
  * - Limpeza final: a API não expõe "apagar reserva" (só mudar estado) e
  *   DELETE /tables/:id recusa mesas com histórico — por isso a limpeza de
  *   reservas/mesas/janelas/blocos usa o Prisma diretamente (única exceção ao
@@ -105,10 +111,35 @@ const DATE_G = addDaysISO(TODAY, 43); // edição
 const DATE_H = addDaysISO(TODAY, 50); // NO_SHOW liberta
 const DATE_I = addDaysISO(TODAY, 57); // bloqueio de dia
 const DATE_SOCKET = addDaysISO(TODAY, 64); // gatilho do teste de socket
+const DATE_J = addDaysISO(TODAY, 71); // janela larga: alternativas por proximidade, TTL, cancelamento tardio
 const WEEKDAY = weekdayOf(DATE_A);
 
 async function slots(date, party, token) {
   return req('GET', `/public/stores/${SLUG}/reservation-slots?date=${date}&party=${party}`, { token });
+}
+
+// throttle dedicado dos slots: 30/min por IP. Ao varrer 30 dias de uma vez fica-se no
+// limite exato — retry único (61s) para a corrida não produzir uma falha falsa.
+async function slotsSafe(date, party) {
+  let r = await slots(date, party);
+  if (r.status === 429) {
+    console.log('    … 429 de throttle nos slots — sleep 61s e retry único');
+    await sleep(61_000);
+    r = await slots(date, party);
+  }
+  return r;
+}
+
+async function days(from, to, party) {
+  return req(
+    'GET',
+    `/public/stores/${SLUG}/reservation-days?from=${from}&to=${to}&party=${party}`,
+  );
+}
+
+/** "HH:MM" → minutos do dia (só para o teste; o servidor compara instantes). */
+function minutesOfLabel(label) {
+  return Number(label.slice(0, 2)) * 60 + Number(label.slice(3, 5));
 }
 
 let contactSeq = 0;
@@ -618,18 +649,198 @@ async function main() {
     check('apagar mesa virgem → 200', delVirgin.status === 200, `got ${delVirgin.status} ${JSON.stringify(delVirgin.json)}`);
 
     // =========================================================================
-    // 22. Gating: reservationsEnabled:false → slots/POST público 404; GET por
+    // 22. Janela larga (DATE_J): alternativas do 409 por PROXIMIDADE, Turnstile
+    //     no-op, TTL do token e cancelamento tardio (entre startsAt e endsAt)
+    // =========================================================================
+    console.log('— 22. janela larga: alternativas por proximidade, Turnstile no-op, TTL, cancelamento tardio');
+    // A janela 12:00–14:00 dos pontos anteriores só dá 5 slots — poucos para distinguir
+    // "4 mais próximos" de "4 primeiros do dia". Alarga-se aqui (o PUT substitui a lista
+    // toda) porque todos os pontos que dependiam da janela estreita já correram.
+    const wideWin = await req('PUT', '/reservation-windows', {
+      token: ownerToken,
+      body: { windows: [{ weekday: WEEKDAY, openMinute: 720, closeMinute: 1320 }] }, // 12:00–22:00
+    });
+    check('PUT janela larga 12:00–22:00 200', wideWin.status === 200, `got ${wideWin.status} ${JSON.stringify(wideWin.json)}`);
+
+    // Ocupa TODAS as mesas reserváveis online às 20:00 (duração 120 → [20:00, 22:00)):
+    // sobra 12:00–18:00 antes e 22:00 depois, logo os 4 mais próximos de 20:00 caem nas
+    // duas pontas e NUNCA coincidem com os 4 primeiros do dia (12:00–13:30).
+    const preJ1 = await manualBook(ownerToken, { date: DATE_J, time: '20:00', partySize: 10, tableIds: [m2Id, m2bId], customerName: 'Bloqueio Prox 1' });
+    const preJ2 = await manualBook(ownerToken, { date: DATE_J, time: '20:00', partySize: 10, tableIds: [m4Id, m8Id], customerName: 'Bloqueio Prox 2' });
+    check('pré-bloqueio M2+M2b às 20:00 (manual) 201', preJ1.status === 201, `got ${preJ1.status} ${JSON.stringify(preJ1.json)}`);
+    check('pré-bloqueio M4+M8 às 20:00 (manual) 201', preJ2.status === 201, `got ${preJ2.status} ${JSON.stringify(preJ2.json)}`);
+
+    const availJ = (await slotsSafe(DATE_J, 2)).json?.slots ?? [];
+    check('20:00 ausente (todas as mesas online ocupadas)', !availJ.includes('20:00'), JSON.stringify(availJ));
+    check('sobram slots suficientes p/ 4 alternativas', availJ.length > 4, JSON.stringify(availJ));
+    // Expectativa derivada dos slots REAIS do servidor com a mesma regra (|distância| e depois
+    // cronológico) — se o service voltar ao slice(0,4) cru, isto falha.
+    const wantedMin = minutesOfLabel('20:00');
+    const expectedAlts = availJ
+      .slice()
+      .sort((a, b) => Math.abs(minutesOfLabel(a) - wantedMin) - Math.abs(minutesOfLabel(b) - wantedMin))
+      .slice(0, 4)
+      .sort((a, b) => minutesOfLabel(a) - minutesOfLabel(b));
+    const prox = await publicPost(DATE_J, '20:00', 2, {}, 'prox');
+    check('POST às 20:00 sem mesas → 409', prox.status === 409, `got ${prox.status} ${JSON.stringify(prox.json)}`);
+    console.log(
+      `    (${availJ.length} slots livres; 4 primeiros do dia = ${JSON.stringify(availJ.slice(0, 4))}; ` +
+        `alternatives = ${JSON.stringify(prox.json?.alternatives)})`,
+    );
+    check(
+      'alternatives = 4 mais próximas de 20:00 (e não as 4 primeiras do dia)',
+      JSON.stringify(prox.json?.alternatives) === JSON.stringify(expectedAlts),
+      `got ${JSON.stringify(prox.json?.alternatives)} esperado ${JSON.stringify(expectedAlts)}`,
+    );
+    check(
+      'alternatives NÃO começam no 1º slot do dia (12:00)',
+      !prox.json?.alternatives?.includes('12:00'),
+      JSON.stringify(prox.json?.alternatives),
+    );
+
+    // ---- Turnstile: no-op com TURNSTILE_SECRET_KEY vazia (dev/e2e) ----
+    const health = await req('GET', '/health');
+    check('GET /health 200', health.status === 200, `got ${health.status}`);
+    check(
+      'health diz turnstile.enforced=false (secret vazia — pré-condição do no-op)',
+      health.json?.turnstile?.enforced === false,
+      JSON.stringify(health.json?.turnstile),
+    );
+    // Com a secret vazia o verify() sai à primeira linha: o token nem é olhado. Este POST leva
+    // um token que a Cloudflare recusaria — se algum dia isto der 403, o no-op deixou de o ser.
+    // (E prova também que `turnstileToken` está no DTO: sem isso o forbidNonWhitelisted dá 400.)
+    const noop = await publicPost(DATE_J, '12:00', 2, { turnstileToken: 'token-invalido-de-teste' }, 'turnstile');
+    check(
+      'POST com turnstileToken lixo e secret vazia → 201 (no-op, e DTO aceita o campo)',
+      noop.status === 201,
+      `got ${noop.status} ${JSON.stringify(noop.json)}`,
+    );
+
+    // ---- TTL do token de gestão: startsAt a mais de 24h no passado → 404 ----
+    const ttl = await publicPost(DATE_J, '12:30', 2, {}, 'ttl');
+    check('reserva p/ teste de TTL criada 201', ttl.status === 201, `got ${ttl.status} ${JSON.stringify(ttl.json)}`);
+    const ttlToken = ttl.json.manageUrl.split('#t=')[1];
+    const ttlBefore = await req('GET', `/public/reservations/${ttl.json.code}`, {
+      headers: { 'x-reservation-token': ttlToken },
+    });
+    check('GET antes de expirar → 200', ttlBefore.status === 200, `got ${ttlBefore.status}`);
+    // Não há endpoint para viajar no tempo — prisma direto (a exceção já documentada no
+    // cabeçalho). 30h no passado = fora da janela de 24h a contar de startsAt.
+    await prisma.reservation.update({
+      where: { code: ttl.json.code },
+      data: {
+        startsAt: new Date(Date.now() - 30 * 3_600_000),
+        endsAt: new Date(Date.now() - 28 * 3_600_000),
+      },
+    });
+    const ttlGet = await req('GET', `/public/reservations/${ttl.json.code}`, {
+      headers: { 'x-reservation-token': ttlToken },
+    });
+    check('GET com startsAt >24h no passado → 404 (token não é credencial eterna)', ttlGet.status === 404, `got ${ttlGet.status} ${JSON.stringify(ttlGet.json)}`);
+    const ttlCancel = await req('POST', `/public/reservations/${ttl.json.code}/cancel`, {
+      body: { token: ttlToken },
+    });
+    check('cancel com startsAt >24h no passado → 404', ttlCancel.status === 404, `got ${ttlCancel.status} ${JSON.stringify(ttlCancel.json)}`);
+
+    // ---- Cancelar entre startsAt e endsAt → OK (antes da R3 era 400) ----
+    const late = await publicPost(DATE_J, '13:00', 2, {}, 'late');
+    check('reserva p/ cancelamento tardio criada 201', late.status === 201, `got ${late.status} ${JSON.stringify(late.json)}`);
+    const lateToken = late.json.manageUrl.split('#t=')[1];
+    // já começou há 10 min, acaba daqui a 110 (duração 120): o cliente que se atrasa e avisa
+    await prisma.reservation.update({
+      where: { code: late.json.code },
+      data: {
+        startsAt: new Date(Date.now() - 10 * 60_000),
+        endsAt: new Date(Date.now() + 110 * 60_000),
+      },
+    });
+    const lateCancel = await req('POST', `/public/reservations/${late.json.code}/cancel`, {
+      body: { token: lateToken },
+    });
+    // 201 e não 200 pela mesma razão do ponto 14 (default do Nest para @Post) — o que interessa
+    // é já não ser 400: um cancelamento tardio vale sempre mais que um no-show mudo.
+    check(
+      'cancelar entre startsAt e endsAt → 201 (antes era 400)',
+      lateCancel.status === 201,
+      `got ${lateCancel.status} ${JSON.stringify(lateCancel.json)}`,
+    );
+
+    // =========================================================================
+    // 23. reservation-days ≡ reservation-slots em 30 dias
+    // =========================================================================
+    console.log('— 23. lote (reservation-days) ≡ dia-a-dia (reservation-slots) em 30 dias');
+    console.log('    … pacing: sleep 61s (o varrimento gasta 30 GETs e o balde dos slots é 30/min)');
+    await sleep(61_000);
+    const dFrom = TODAY;
+    const dTo = addDaysISO(TODAY, 29);
+    const batch = await days(dFrom, dTo, 2);
+    check('GET reservation-days 200', batch.status === 200, `got ${batch.status} ${JSON.stringify(batch.json)}`);
+    check('devolve os 30 dias do intervalo', batch.json?.days?.length === 30, `got ${batch.json?.days?.length}`);
+    // Se o lote e o dia-a-dia divergirem, a grelha de dias mente ao cliente: dias esbatidos que
+    // afinal têm vaga (perde reservas) ou dias clicáveis que abrem vazios (parece avariado).
+    const mismatches = [];
+    for (const d of batch.json?.days ?? []) {
+      const one = await slotsSafe(d.date, 2);
+      const hasSlots = Array.isArray(one.json?.slots) && one.json.slots.length > 0;
+      if (one.status !== 200 || hasSlots !== d.hasSlots) {
+        mismatches.push(`${d.date}: lote=${d.hasSlots} dia-a-dia=${hasSlots} (GET ${one.status})`);
+      }
+    }
+    check(
+      'hasSlots === (slots.length > 0) nos 30 dias',
+      mismatches.length === 0,
+      mismatches.join(' | '),
+    );
+
+    // =========================================================================
+    // 24. Gating: reservationsEnabled:false → slots/POST público 404; GET por
     //     code/token continua 200 (não depende do gating)
     // =========================================================================
-    console.log('— 22. gating (reservationsEnabled=false)');
+    console.log('— 24. gating (reservationsEnabled=false)');
     const disable = await req('PATCH', '/tenants/me', { token: ownerToken, body: { reservationsEnabled: false } });
     check('PATCH reservationsEnabled=false 200', disable.status === 200, `got ${disable.status}`);
-    const slotsGated = await slots(DATE_A, 2);
+    // slotsSafe e não slots: o varrimento do ponto 23 deixa o balde dos slots no limite exato
+    // (30/min) e este pedido cai no mesmo minuto — sem o retry saía um 429 e uma falha FALSA.
+    const slotsGated = await slotsSafe(DATE_A, 2);
     check('GET slots com gating → 404', slotsGated.status === 404, `got ${slotsGated.status}`);
     const postGated = await publicPost(DATE_A, '12:00', 2, {}, 'gated');
     check('POST público com gating → 404', postGated.status === 404, `got ${postGated.status}`);
     const getByCodeGated = await req('GET', `/public/reservations/${g1.json.code}`, { headers: { 'x-reservation-token': g1Token } });
     check('GET por code/token continua 200 (não depende de gating)', getByCodeGated.status === 200, `got ${getByCodeGated.status}`);
+
+    // =========================================================================
+    // 25. TRACKER DO THROTTLE — regressão do commit 2053fc8 (falha VIVA em produção).
+    //
+    //     O ThrottlerGuard identifica o cliente por `req.ips[0] ?? req.ip`. Com
+    //     `trust proxy` ligado sem proxy à frente, o Express preenche `req.ips` a partir do
+    //     X-Forwarded-For — um header por pedido = um balde novo por pedido, e TODOS os
+    //     limites da API (login incluído) deixam de existir sem ninguém dar por ela.
+    //     Este teste manda 6 POSTs do MESMO socket com XFF DIFERENTES: se o balde é do
+    //     socket (correto), o 6.º leva 429; se voltou a seguir o header, saem 6× 400.
+    // =========================================================================
+    console.log('— 25. tracker do throttle: X-Forwarded-For NÃO cria balde novo (regressão de 2053fc8)');
+    console.log('    … pacing: sleep 61s (o balde de POSTs públicos é 5/min e tem de estar limpo)');
+    await sleep(61_000);
+    const xffStatuses = [];
+    for (let i = 1; i <= 6; i++) {
+      const r = await req('POST', `/public/stores/${SLUG}/reservations`, {
+        // Corpo deliberadamente inválido: o ValidationPipe recusa-o com 400 e nada é escrito
+        // na BD — mas o guard do throttle corre ANTES dos pipes, logo o balde conta na mesma.
+        body: { campoInexistente: true },
+        headers: { 'X-Forwarded-For': `203.0.113.${i}` },
+      });
+      xffStatuses.push(r.status);
+    }
+    check(
+      'os 5 primeiros POSTs (XFF diferentes) passam o guard (400 do DTO, não 429)',
+      xffStatuses.slice(0, 5).every((s) => s === 400),
+      `got ${JSON.stringify(xffStatuses)}`,
+    );
+    check(
+      '6.º POST do mesmo socket com XFF diferente → 429 (o balde é do SOCKET, não do header)',
+      xffStatuses[5] === 429,
+      `got ${JSON.stringify(xffStatuses)} — se não há 429, req.ip voltou a seguir o X-Forwarded-For e TODOS os limites caíram`,
+    );
   } catch (e) {
     console.error('erro fatal durante os testes:', e);
     failed++;
