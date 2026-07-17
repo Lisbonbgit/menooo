@@ -823,20 +823,28 @@ async function main() {
     check('GET por code/token continua 200 (não depende de gating)', getByCodeGated.status === 200, `got ${getByCodeGated.status}`);
 
     // =========================================================================
-    // 25. TRACKER DO THROTTLE — regressão do commit 2053fc8 (falha VIVA em produção).
+    // 25. TRACKER DO THROTTLE — a metade que É testável a partir daqui.
     //
-    //     O ThrottlerGuard identifica o cliente por `req.ips[0] ?? req.ip`. Com
-    //     `trust proxy` ligado sem proxy à frente, o Express preenche `req.ips` a partir do
-    //     X-Forwarded-For — um header por pedido = um balde novo por pedido, e TODOS os
-    //     limites da API (login incluído) deixam de existir sem ninguém dar por ela.
-    //     Este teste manda 6 POSTs do MESMO socket com XFF DIFERENTES: se o balde é do
-    //     socket (correto), o 6.º leva 429; se voltou a seguir o header, saem 6× 400.
+    //     O `trust proxy` é uma LISTA (['loopback','uniquelocal']): o X-Forwarded-For só conta
+    //     quando o PEER da ligação é mesmo o proxy. Em produção há dois caminhos — o Caddy
+    //     (peer=loopback, XFF de confiança) e a porta 8083 publicada (peer público, XFF
+    //     ignorado). Ver main.ts.
+    //
+    //     ⚠️ O CASO DO ATACANTE NÃO É TESTÁVEL AQUI: este script liga-se de 127.0.0.1, que É
+    //     um proxy de confiança — logo o XFF é (corretamente) respeitado e nunca conseguiríamos
+    //     reproduzir um peer público. Esse caso vive em `src/trust-proxy.spec.ts`, onde se
+    //     controla o peer, e está validado por mutação. NÃO reescrever este teste para exigir
+    //     429 com XFF diferentes: isso afirmaria o modelo antigo (`trust proxy:false`), que
+    //     punha TODOS os clientes reais do Caddy num só balde.
+    //
+    //     O que se prova aqui é a outra metade, tão importante quanto: clientes distintos
+    //     atrás do proxy têm baldes distintos e NÃO se bloqueiam uns aos outros.
     // =========================================================================
-    console.log('— 25. tracker do throttle: X-Forwarded-For NÃO cria balde novo (regressão de 2053fc8)');
+    console.log('— 25. tracker do throttle: cada cliente atrás do proxy tem o SEU balde');
     console.log('    … pacing: sleep 61s (o balde de POSTs públicos é 5/min e tem de estar limpo)');
     await sleep(61_000);
     const xffStatuses = [];
-    for (let i = 1; i <= 6; i++) {
+    for (let i = 1; i <= 8; i++) {
       const r = await req('POST', `/public/stores/${SLUG}/reservations`, {
         // Corpo deliberadamente inválido: o ValidationPipe recusa-o com 400 e nada é escrito
         // na BD — mas o guard do throttle corre ANTES dos pipes, logo o balde conta na mesma.
@@ -846,14 +854,24 @@ async function main() {
       xffStatuses.push(r.status);
     }
     check(
-      'os 5 primeiros POSTs (XFF diferentes) passam o guard (400 do DTO, não 429)',
-      xffStatuses.slice(0, 5).every((s) => s === 400),
-      `got ${JSON.stringify(xffStatuses)}`,
+      '8 clientes distintos (XFF distintos) pelo proxy: nenhum leva 429',
+      xffStatuses.every((s) => s === 400),
+      `got ${JSON.stringify(xffStatuses)} — um 429 aqui significa que os clientes reais atrás do ` +
+        `Caddy estão a partilhar um balde e a bloquear-se uns aos outros`,
     );
+    // ... e o mesmo cliente, esse sim, é travado.
+    const mesmoCliente = [];
+    for (let i = 1; i <= 7; i++) {
+      const r = await req('POST', `/public/stores/${SLUG}/reservations`, {
+        body: { campoInexistente: true },
+        headers: { 'X-Forwarded-For': '198.51.100.7' },
+      });
+      mesmoCliente.push(r.status);
+    }
     check(
-      '6.º POST do mesmo socket com XFF diferente → 429 (o balde é do SOCKET, não do header)',
-      xffStatuses[5] === 429,
-      `got ${JSON.stringify(xffStatuses)} — se não há 429, req.ip voltou a seguir o X-Forwarded-For e TODOS os limites caíram`,
+      'o MESMO cliente (XFF constante) leva 429 ao 6.º — o limite existe mesmo',
+      mesmoCliente.slice(0, 5).every((s) => s === 400) && mesmoCliente.slice(5).every((s) => s === 429),
+      `got ${JSON.stringify(mesmoCliente)}`,
     );
   } catch (e) {
     console.error('erro fatal durante os testes:', e);
