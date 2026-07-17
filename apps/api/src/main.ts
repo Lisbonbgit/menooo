@@ -11,8 +11,13 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
 
-  // atrás do Caddy: o throttling por IP precisa do IP real (X-Forwarded-For)
-  app.set('trust proxy', 1);
+  // O throttle identifica o cliente por `req.ip`. Confiar no X-Forwarded-For SEM um proxy
+  // à frente que o reescreva deixa o cliente escolher o próprio IP: um header diferente por
+  // pedido = um balde novo por pedido, e todos os limites (login, reservas públicas) caem.
+  // Hoje a API está publicada direta (`8083:3001`), logo o valor seguro é `false` = IP do socket.
+  // Só pôr TRUST_PROXY=1 quando existir mesmo um proxy E a porta direta deixar de estar exposta
+  // (senão o proxy é contornável pela porta e voltamos ao mesmo buraco).
+  app.set('trust proxy', process.env.TRUST_PROXY ? Number(process.env.TRUST_PROXY) : false);
 
   // CORP cross-origin: as imagens são servidas em api.menooo.com e mostradas
   // na loja (menooo.com) — de outra forma o browser bloqueava-as.
