@@ -137,6 +137,15 @@ export default function LoginPage() {
               Regista o teu restaurante
             </a>
           </p>
+
+          {/* Sem isto o tablet de cozinha fica num beco: uma instalação nova não
+              tem kitchenDevice no localStorage, o guard manda-o para aqui, e este
+              ecrã pede credenciais do dono que a cozinha não tem. */}
+          <p className="mt-3 text-center text-[13px]">
+            <a href="/pair" className="font-medium text-ink-mute hover:text-brand hover:underline">
+              Este é um tablet de cozinha
+            </a>
+          </p>
         </form>
       </section>
     </main>
