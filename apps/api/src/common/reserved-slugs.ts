@@ -13,6 +13,11 @@ const RESERVED = new Set([
   'checkout',
   'painel',
   'menooo',
+  // página de download do APK da app de cozinha (/cozinha na storefront)
+  'cozinha',
+  // o Caddy serve o .apk em /downloads/* ANTES do proxy da storefront
+  // (deploy/Caddyfile.cozinha.snippet), logo tapa as subpáginas desta loja
+  'downloads',
 ]);
 
 export function isReservedSlug(slug: string): boolean {

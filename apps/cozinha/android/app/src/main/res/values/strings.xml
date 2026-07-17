@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Menooo Cozinha</string>
+    <string name="title_activity_main">Menooo Cozinha</string>
+    <string name="package_name">com.menooo.cozinha</string>
+    <string name="custom_url_scheme">com.menooo.cozinha</string>
+</resources>

@@ -33,3 +33,9 @@ apps/api/uploads/
 
 # config local do Claude Code (dev tooling, não versionar)
 .claude/
+
+# android (binários e keystore nunca entram no repo)
+*.apk
+*.aab
+*.keystore
+*.jks
