@@ -28,32 +28,62 @@ sem partir nada: anti-spam a sério, contrato público completo e prontidão do 
 | Divulgação | Página + link direto + botão `embed.js` `data-reservas="1"` |
 | Interruptor | Sobe para o topo da aba Reservas, dentro de um **bloco de prontidão** |
 
-## 3. Pré-requisito de segurança — `trust proxy` (JÁ CORRIGIDO)
+## 3. Pré-requisito de segurança — `trust proxy` (CORRIGIDO, ao 2.º tentar)
 
-**Não é um detalhe da R3: é uma falha viva na API que já está em produção.**
+**Não é um detalhe da R3: era uma falha viva na API que já está em produção.**
 
-`main.ts` fazia `app.set('trust proxy', 1)` com o comentário «atrás do Caddy» — mas o Caddy
-não existe e o `docker-compose.prod.yml` publica `8083:3001` direto. Sem proxy a reescrever
-o `X-Forwarded-For`, o `@nestjs/throttler` usa `req.ip`, que passa a ser **o valor que o
-cliente escreve no header**. Um XFF diferente por pedido = um balde novo por pedido.
+`main.ts` fazia `app.set('trust proxy', 1)` com o comentário «atrás do Caddy» — posto na F1 da
+cozinha **como medida de segurança**, para um Caddy que na altura não existia. O `@nestjs/throttler`
+identifica o cliente por `req.ip`; com `trust proxy: 1` o `req.ip` passa a sair do
+`X-Forwarded-For`, **que o cliente escreve**. Um XFF por pedido = um balde por pedido.
 
-**Provado empiricamente** (stack local, mesma config da prod), 8 POSTs num limite de 5/min:
+> **A primeira versão deste § estava errada e a correção que descrevia teria partido a
+> produção.** Dizia «o Caddy não existe» com base no `docker-compose.prod.yml` (`8083:3001`) e
+> nos defaults do repo. Ninguém perguntou à produção. **O repo mente:**
+>
+> ```
+> dig +short api.menooo.com          -> 187.124.4.163
+> curl -sI https://api.menooo.com/api/health -> HTTP/2 200      => HÁ um Caddy (TLS terminado)
+> curl -s  http://187.124.4.163:8083/api/health -> 200          => a porta direta TAMBÉM está aberta
+> ```
+>
+> Existem **dois** caminhos, logo nenhum valor escalar serve:
+> - `1` → confia no XFF de qualquer origem → pela porta 8083 o atacante escolhe o próprio
+>   `req.ip`. **Era a falha real.**
+> - `false` (a "correção" anterior) → ignora o XFF do Caddy → todo o tráfego legítimo passa a ter
+>   `req.ip` = IP do Caddy, **um só balde partilhado** → **429 em clientes reais**. Trocava uma
+>   falha por uma avaria.
 
-| | Antes | Depois |
+**Correção aplicada:** uma **lista de proxies de confiança**.
+
+```ts
+app.set('trust proxy', process.env.TRUST_PROXY ?? ['loopback', 'uniquelocal']);
+```
+
+O XFF só conta quando o **peer da ligação** é mesmo o proxy (`loopback` = Caddy no host;
+`uniquelocal` = redes privadas, se algum dia for container). Provado em
+`apps/api/src/trust-proxy.spec.ts`:
+
+| Cenário | `req.ip` | Consequência |
 |---|---|---|
-| XFF único por pedido | `400 400 400 400 400 400 400 400` (**zero 429**) | `400 400 400 400 400 429 429 429` |
-| XFF constante | `400 ×5` depois `429 ×3` | idem |
+| Atacante direto na 8083 com `XFF: 9.9.9.9` | `1.2.3.4` (o socket dele) | throttle funciona |
+| Cliente real pelo Caddy, `XFF: 88.1.2.3` | `88.1.2.3` | baldes por cliente, sem 429 falsos |
+| XFF forjado **através** do Caddy (`9.9.9.9, 203.0.113.50`) | `203.0.113.50` | a forja é ignorada |
 
-Alcance real: **todos** os limites da API, incluindo `POST /auth/login`, que **não tem
-`@Throttle` nenhum** — só o global de 100/min, contornável. Ou seja, força bruta de
-passwords sem travão nenhum, hoje, em produção.
+O teste foi **validado por mutação**: emulando o `trust proxy: 1` antigo fica vermelho em
+`trust('1.2.3.4') === false` e no `req.ip` do atacante (`9.9.9.9` em vez de `1.2.3.4`) — e os
+dois casos do caminho do Caddy **continuam verdes**, o que confirma que o `1` só estava partido
+na porta direta. Tem de ser **unit e não e2e**: o e2e liga-se de `127.0.0.1`, que é um proxy de
+confiança, logo nunca exercitaria o caso do atacante.
 
-**Correção aplicada:** `app.set('trust proxy', process.env.TRUST_PROXY ? Number(...) : false)`.
-Só pôr `TRUST_PROXY=1` quando existir mesmo um proxy **e** a porta direta sair do compose
-(ou passar a `127.0.0.1:8083:3001`) — senão o proxy é contornável pela porta.
+Alcance da falha original: **todos** os limites da API, incluindo `POST /auth/login`, que não
+tinha `@Throttle` nenhum — só o global de 100/min, contornável. Força bruta de passwords sem
+travão. O `@Throttle` do login entra na Task 7.
 
 **Ações fora deste spec, para o utilizador decidir:**
 - Este commit deve ir a produção **antes** e independentemente da R3.
+- **Fechar a porta direta** (`127.0.0.1:8083:3001` no compose) continua a ser boa higiene — mas
+  já não é o que segura isto de pé, e por isso deixou de ser bloqueante.
 - Recomendo `@Throttle` dedicado no `login` (ex. 10/min): 100/min ainda são 144k
   tentativas/dia por IP.
 - **Se o `menooo.com` for para a Cloudflare, manter o DNS em «DNS only» (nuvem cinzenta).**
@@ -173,7 +203,22 @@ custo quase nulo. Os tetos é que são o controlo real.
   `CONFIRMED` futuras). O `MAIL_FROM` é **único e partilhado por toda a plataforma** (Resend)
   → uma campanha queima a reputação de envio de **todos** os tenants.
   → Limite por destinatário no `MailService` (≤5 emails de reserva por endereço/24 h,
-  descartados com log) + teto diário por tenant de reservas ONLINE.
+  descartados com log).
+
+  > ⚠️ **SÓ nos 2 emails que vão ao CLIENTE** (confirmação e cancelamento), onde o destinatário
+  > é escolhido por quem reserva. **NUNCA nos alertas ao RESTAURANTE.** A 1.ª versão deste spec
+  > mandava aplicá-lo «aos 4 métodos `sendReservation*`» — e dois deles vão para o dono, num
+  > endereço **fixo** por tenant. O teto virava uma arma: 5 reservas e o dono deixava de receber
+  > alertas 24 h, sendo o email o único canal dele quando não tem o painel aberto. Um restaurante
+  > com procura normal passa dos 5/dia sozinho. O bombing do dono trava-se pelo cap por contacto
+  > e pelo Turnstile — nunca silenciando-o. *(Blocker apanhado por duas lentes da revisão do
+  > código; testes em `mail.service.spec.ts` incluem baldes independentes.)*
+  >
+  > O teto por destinatário também **não** se aplica ao `send()` genérico: emails de conta
+  > (verificação, reposição de password) não podem ser silenciados por tráfego de reservas.
+
+  *(Fora de âmbito: teto diário por tenant de reservas ONLINE — o cap por contacto normalizado
+  e o Turnstile cobrem o essencial; entra se a procura o justificar.)*
 
 **Nota — um achado da revisão que verifiquei e REJEITEI:** a lente de UX afirmou que tornar
 o email opcional parte o cap, porque `OR: [{ customerEmail: undefined }, …]` faria o Prisma
