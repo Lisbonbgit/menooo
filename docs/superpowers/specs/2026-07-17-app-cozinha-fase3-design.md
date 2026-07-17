@@ -114,7 +114,25 @@ Verificado em 17/07: as 5 lojas reais são `pizzaria-demo`, `lenha-e-brasa`,
 `lojapizzaria`, `loja-do-silas`, `lenha-e-brasa-alfragide`. **Nenhuma colide.** O
 risco é futuro, e fecha-se com uma linha antes de a página existir.
 
-### 4.3 O repositório tem de deixar de mentir
+### 4.3 O dono não tem como gerar o código (descoberto a escrever o plano)
+
+A Fase 1 criou três endpoints de OWNER —
+[tenants.controller.ts:91-112](../../../apps/api/src/modules/tenants/tenants.controller.ts):
+`POST /tenants/me/kitchen/pair-code`, `GET /tenants/me/kitchen`,
+`DELETE /tenants/me/kitchen` — e **nenhuma UI os consome**. Nenhuma. A verificação da
+Fase 2 (plano da Fase 2, Task 8) diz textualmente "gerar código de emparelhamento
+**por API**": foi testado com `curl`.
+
+Consequência: o dono instala o APK, chega ao `/pair`, e **não tem de onde tirar o
+código**. Sem isto, tudo o resto desta fase é decorativo. É o género de buraco que só
+aparece quando se tenta usar a coisa de ponta a ponta, e ficou escondido porque cada
+fase verificou a sua própria peça.
+
+**Decisão:** secção "App de cozinha" nas Definições — estado, gerar código,
+desemparelhar, e o link para `menooo.com/cozinha`. Reutiliza o padrão de secção que
+as Definições já têm (`settings/page.tsx:436-451`).
+
+### 4.4 O repositório tem de deixar de mentir
 
 `docker-compose.prod.yml:54-62` e `.env.production.example` alinhados com o que
 produção realmente serve. **Não consigo ler o `.env` do VPS** (sem acesso SSH), por
