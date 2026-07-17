@@ -261,6 +261,60 @@ O que **não consigo** verificar, e fica marcado como **NÃO VERIFICADO**:
 4. **Confirmar o `.env` real do VPS** contra o que escrevi em 4.3.
 5. Decidir sobre o **§5.5** (Preferences nativo).
 
+## 8.1 O que a execução mudou face a este spec
+
+Registado a 17/07 ~02:15, depois de implementar. Quatro desvios, todos deliberados:
+
+1. **`variables.gradle` não foi tocado.** O plano mandava copiar o do RH
+   (`compileSdk 36`/`target 35`); o `cap add android` gerou `compileSdk 34`, que está
+   instalado e compila. Mudar não trazia nada — ficou o default do Capacitor.
+2. **`compileOptions`/`kotlinOptions` a 17** em `app/build.gradle`: não estava no
+   plano. Sem isto o build morre com *"Inconsistent JVM-target compatibility:
+   compileDebugJavaWithJavac (17) e compileDebugKotlin (21)"* — o Capacitor gera o
+   projeto em Java 17 e o Kotlin assume o 21 do JBR.
+3. **O `PrinterClient` ganhou uma costura de teste (`internal var sender`)** e os
+   testes passaram de 4 para 5, separados em dois grupos: a **fila** (com um duplo
+   determinístico) e o **socket** (contra um `ServerSocket` real).
+4. **§5.5 (Preferences nativo) continua adiado**, como decidido.
+
+O ponto 3 merece explicação, porque nasceu de um erro meu que só apareceu por
+insistência. O primeiro teste da serialização media a impressora falsa, não o
+cliente: aceitava ligações numa só thread, portanto **media a sua própria
+serialização** — os outros sockets ficavam no backlog do kernel. Passava com o
+cliente estragado de propósito (pool de 8 threads). Corrigido o servidor para
+aceitar em threads separadas, apareceu o **erro simétrico**: o handler dormia 80 ms
+*depois* de o cliente já ter fechado o socket e ido embora, portanto media a vida
+das threads do servidor e falhava com o cliente **correto**.
+
+A conclusão é que **a serialização do cliente não é observável através de um socket
+sem corridas**: o cliente fecha e sai antes de o servidor conseguir medir seja o que
+for. Daí a costura. Cada teste foi validado por mutação — estragar a fila põe o teste
+da fila vermelho (`expected:<1> but was:<5>`) e mais nenhum.
+
+> Lição para o próximo: um teste verde não vale nada até se ter visto ficar
+> vermelho pela razão certa.
+
+## 8.2 Verificado ponta a ponta (stack local, 17/07 ~02:10)
+
+Feito com a API em `:3011`, painel em `:3012` e Postgres em `:5434` — portas
+próprias, porque a sessão do `matheus-reservas-fase3` já tinha as normais ocupadas.
+
+- Dono entra → Definições mostram a secção **"App de cozinha"** a seguir a
+  "Impressão de pedidos" → botão gera o código (`NV4S-B43W-N3JY`).
+- `/pair` com esse código → aterra em **`/orders`**, `role=KITCHEN`,
+  `kitchenDevice=true`, `autoPrint=true`.
+- Modo cozinha: navegação **só** `/orders`, sem troca de unidade, "Sair" é
+  **"Desemparelhar"**.
+- Reutilizar o código → **401** "Código inválido ou expirado" (uso único).
+- `/cozinha` na storefront → **200**, com os 4 passos e o aviso das fontes
+  desconhecidas.
+- Link do `/login` para o `/pair` → presente e a funcionar.
+- APK de debug: 3,6 MB. `capacitor.config.json` lá dentro aponta para
+  `https://painel.menooo.com`; as 4 classes (`KitchenPrinterPlugin`, `MainActivity`,
+  `PrinterClient`, `PrinterException`) estão no `classes4.dex`; o
+  `capacitor.plugins.json` tem **3 bytes** (`[]`) — evidência direta de que sem o
+  `registerPlugin` antes do `super.onCreate()` o plugin não existiria.
+
 ## 9. Riscos
 
 - **Skew web↔APK** (spec 15/07 §12): o web atualiza a quente, o APK não. Um deploy do

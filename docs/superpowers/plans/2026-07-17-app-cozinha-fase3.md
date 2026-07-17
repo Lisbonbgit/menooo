@@ -1253,7 +1253,7 @@ export function KitchenPairing() {
             type="button"
             onClick={unpair}
             disabled={busy}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-line px-4 py-2.5 text-[13.5px] font-medium text-ink-soft transition-colors hover:border-danger hover:text-danger disabled:opacity-60"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-line px-4 py-2.5 text-[13.5px] font-medium text-ink-soft transition-colors hover:border-brand hover:text-brand disabled:opacity-60"
           >
             <Unlink size={14} /> Desemparelhar
           </button>
@@ -1261,7 +1261,7 @@ export function KitchenPairing() {
       </div>
 
       {code && (
-        <div className="mt-4 rounded-xl border border-line bg-paper-soft p-4">
+        <div className="mt-4 rounded-xl border border-line bg-paper p-4">
           <p className="text-[11px] uppercase tracking-[0.16em] text-ink-mute">
             Escreve este código na app
           </p>
@@ -1338,9 +1338,12 @@ Acrescentar `Tablet` à lista de ícones importados de `lucide-react` (bloco que
 ```bash
 cd /Users/matheus.moraes/dev/comanda-cozinha && export PATH="$HOME/.local/node/bin:$HOME/Library/pnpm:$PATH" && pnpm --filter @comanda/dashboard typecheck
 ```
-Expected: sem erros. Se `paper-soft` ou `danger` não existirem no tema, trocar por
-`bg-paper` e `text-brand` — **verificar em `apps/dashboard/tailwind.config.ts` antes**,
-não adivinhar.
+Expected: sem erros.
+
+> Tokens verificados em `apps/dashboard/tailwind.config.ts:7-28`: existem `brand`
+> (DEFAULT/dark/soft/ink), `paper`, `espresso` (DEFAULT/light/line), `ink`
+> (DEFAULT/soft/mute), `line`, `cream`. **Não existem** `danger` nem `paper-soft` —
+> o código acima já usa só os que existem.
 
 - [ ] **Step 4: Commit**
 
