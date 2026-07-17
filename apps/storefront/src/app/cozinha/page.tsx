@@ -8,6 +8,13 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
+// O APK é servido pela API em /uploads (não sob /api). `||` e não `??`: o build
+// pode injetar '' e o `??` não o apanharia. Nome versionado de propósito — o
+// /uploads tem cache immutable de 7 dias, logo cada versão nova precisa de URL nova.
+const APK_VERSION = '1.0.0';
+const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'https://api.menooo.com').replace(/\/api\/?$/, '');
+const APK_URL = `${API_BASE}/uploads/menooo-cozinha-${APK_VERSION}.apk`;
+
 const PASSOS = [
   {
     n: '1',
@@ -48,7 +55,7 @@ export default function CozinhaPage() {
       </p>
 
       <a
-        href="/downloads/menooo-cozinha.apk"
+        href={APK_URL}
         className="mt-8 inline-flex items-center rounded-xl bg-brand px-6 py-3.5 text-[15px] font-semibold text-white shadow-lift transition-all hover:bg-brand-dark active:scale-[0.99]"
       >
         Descarregar para Android
