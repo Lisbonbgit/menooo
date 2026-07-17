@@ -16,11 +16,13 @@ import {
   Bike,
   ShoppingBag,
   Palette,
+  Tablet,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { AppShell } from '@/components/AppShell';
 import { ImageUploader } from '@/components/ImageUploader';
 import { PrinterConfig } from '@/components/PrinterConfig';
+import { KitchenPairing } from '@/components/KitchenPairing';
 import {
   useTenant,
   useUpdateTenant,
@@ -448,6 +450,23 @@ export default function SettingsPage() {
             </div>
           </div>
           <PrinterConfig storeName={form.name || 'Restaurante'} />
+        </section>
+
+        <section className="rounded-xl border border-line bg-white p-5 shadow-card">
+          <div className="mb-4 flex items-center gap-3">
+            <span className="text-ink-mute">
+              <Tablet size={17} />
+            </span>
+            <div>
+              <h2 className="font-display text-[16px] font-semibold leading-tight">
+                App de cozinha
+              </h2>
+              <p className="text-[12px] text-ink-mute">
+                Tablet Android que recebe os pedidos e imprime na impressora de rede
+              </p>
+            </div>
+          </div>
+          <KitchenPairing />
         </section>
       </div>
     </AppShell>

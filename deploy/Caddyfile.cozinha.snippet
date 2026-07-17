@@ -1,0 +1,26 @@
+# Menooo — servir o APK da app de cozinha.
+#
+# NÃO EXECUTADO: esta sessão não tem acesso ao servidor. É um snippet para
+# aplicares à mão no Caddyfile do VPS (que vive lá, fora deste repositório).
+#
+# O `handle` do /downloads/* TEM de vir ANTES do handle genérico da storefront:
+# em Caddy o primeiro handle que casa é o que ganha, e se o reverse_proxy
+# apanhar o pedido primeiro, é o Next.js a responder — 404.
+#
+# O APK NÃO pode viver em apps/storefront/public/: o container não tem volume,
+# logo o ficheiro só entraria pela imagem — que é a mesma dos 4 serviços. Cada
+# versão nova do APK (mudança 100% nativa, sem uma linha de web alterada)
+# obrigaria a reconstruir os três bundles Next com 1,5 GB de heap no VPS e a
+# reiniciar storefront + dashboard + admin.
+
+menooo.com {
+    handle /downloads/* {
+        root * /srv/menooo
+        file_server
+    }
+
+    # ↓ o que já lá está hoje, intocado
+    handle {
+        reverse_proxy 127.0.0.1:8080
+    }
+}
