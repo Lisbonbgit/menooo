@@ -51,15 +51,15 @@ services:
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
       STRIPE_PRICE_ID: ${STRIPE_PRICE_ID:-}
-      DASHBOARD_URL: ${DASHBOARD_URL:-http://187.124.4.163:8081}
-      STORE_URL: ${STORE_URL:-http://187.124.4.163:8080}
-      ADMIN_URL: ${ADMIN_URL:-http://187.124.4.163:8082}
+      DASHBOARD_URL: ${DASHBOARD_URL:-https://painel.menooo.com}
+      STORE_URL: ${STORE_URL:-https://menooo.com}
+      ADMIN_URL: ${ADMIN_URL:-https://admin.menooo.com}
       # caixa da equipa para avisos internos (novos registos)
       PLATFORM_NOTIFY_EMAIL: ${PLATFORM_NOTIFY_EMAIL:-}
       # Imagens carregadas (fotos de produtos, capa e logótipo) — guardadas no
       # volume comanda-uploads e servidas em ${PUBLIC_API_URL}/uploads/…
       UPLOADS_DIR: /app/uploads
-      PUBLIC_API_URL: ${PUBLIC_API_URL:-http://187.124.4.163:8083}
+      PUBLIC_API_URL: ${PUBLIC_API_URL:-https://api.menooo.com}
       # Email transacional (Resend por SMTP) — vazio SMTP_HOST = desativado
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}

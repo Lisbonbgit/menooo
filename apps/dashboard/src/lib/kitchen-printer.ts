@@ -6,6 +6,17 @@
 // devolve false e o resto do painel nem nota.
 export interface KitchenPrinterPlugin {
   print(opts: { ip: string; port: number; dataBase64: string }): Promise<void>;
+  /**
+   * Versão da INTERFACE do plugin (não da app). O APK v1 devolve 1.
+   *
+   * Existe desde o v1 de propósito: um APK que saia sem este método nunca o
+   * poderá ter, e o feature-detect ficaria preso a "existe/não existe" — o que
+   * não chega no dia em que o web precisar de mandar um argumento novo (o APK
+   * antigo aceitaria a chamada e ignorava-o em silêncio, com o talão a sair
+   * errado). O portão de minVersion só se constrói quando houver um v2: até lá
+   * seria código a adivinhar o futuro.
+   */
+  getVersion(): Promise<{ version: number }>;
 }
 
 export function isNativeApp(): boolean {
