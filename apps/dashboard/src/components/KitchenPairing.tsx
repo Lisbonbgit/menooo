@@ -25,7 +25,8 @@ interface KitchenStatus {
  */
 export function KitchenPairing() {
   const [status, setStatus] = useState<KitchenStatus | null>(null);
-  const [code, setCode] = useState<string | null>(null);
+  const [code, setCode] = useState<{ value: string; expiresAt: number } | null>(null);
+  const [expirado, setExpirado] = useState(false);
   const [busy, setBusy] = useState(false);
 
   async function load() {
@@ -41,19 +42,45 @@ export function KitchenPairing() {
     void load();
   }, []);
 
+  // O código morre ao fim de 10 min no servidor. Sem isto, ficava no ecrã a
+  // dizer "válido" para sempre: o dono voltava mais tarde, escrevia-o no tablet
+  // e levava "código inválido" sem nada que ligasse as duas coisas.
+  useEffect(() => {
+    if (!code) return;
+    const restante = code.expiresAt - Date.now();
+    if (restante <= 0) {
+      setExpirado(true);
+      return;
+    }
+    setExpirado(false);
+    const t = setTimeout(() => setExpirado(true), restante);
+    return () => clearTimeout(t);
+  }, [code]);
+
   async function generate() {
     setBusy(true);
     try {
       const { data } = await api.post<{ code: string; expiresAt: string }>(
         '/tenants/me/kitchen/pair-code',
       );
-      setCode(data.code);
+      setCode({ value: data.code, expiresAt: new Date(data.expiresAt).getTime() });
       toast.success('Código gerado. Válido 10 minutos.');
       void load();
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? 'Não foi possível gerar o código.');
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function copiar(valor: string) {
+    try {
+      // Sem o await, um clipboard indisponível (contexto não-seguro) ou uma
+      // rejeição de permissão passavam em silêncio e o toast mentia na mesma.
+      await navigator.clipboard.writeText(valor);
+      toast.success('Copiado.');
+    } catch {
+      toast.error('Não foi possível copiar — escreve o código à mão.');
     }
   }
 
@@ -114,33 +141,49 @@ export function KitchenPairing() {
       {code && (
         <div className="mt-4 rounded-xl border border-line bg-paper p-4">
           <p className="text-[11px] uppercase tracking-[0.16em] text-ink-mute">
-            Escreve este código na app
+            {expirado ? 'Este código expirou' : 'Escreve este código na app'}
           </p>
           <div className="mt-2 flex items-center gap-3">
-            <code className="select-all font-mono text-[19px] font-semibold tracking-wider">
-              {code}
-            </code>
-            <button
-              type="button"
-              onClick={() => {
-                void navigator.clipboard?.writeText(code);
-                toast.success('Copiado.');
-              }}
-              className="text-ink-mute transition-colors hover:text-brand"
-              title="Copiar"
+            <code
+              className={`select-all font-mono text-[19px] font-semibold tracking-wider ${
+                expirado ? 'text-ink-mute line-through' : ''
+              }`}
             >
-              <Copy size={15} />
-            </button>
+              {code.value}
+            </code>
+            {!expirado && (
+              <button
+                type="button"
+                onClick={() => void copiar(code.value)}
+                className="text-ink-mute transition-colors hover:text-brand"
+                title="Copiar"
+              >
+                <Copy size={15} />
+              </button>
+            )}
           </div>
-          <p className="mt-2 text-[12px] text-ink-mute">Válido 10 minutos e só serve uma vez.</p>
+          <p className="mt-2 text-[12px] text-ink-mute">
+            {expirado
+              ? 'Gera outro para emparelhar o tablet.'
+              : 'Válido 10 minutos e só serve uma vez.'}
+          </p>
         </div>
+      )}
+
+      {/* Depois de um refresh o código sai do useState; o servidor é que sabe se
+          ainda há algum por gastar. */}
+      {!code && status?.pendingCode && (
+        <p className="mt-4 text-[12.5px] text-ink-soft">
+          Há um código gerado que ainda não foi usado. Se não o tens à mão, gera outro — o
+          anterior deixa de servir.
+        </p>
       )}
 
       {status && (
         <p className="mt-4 flex items-center gap-1.5 text-[12.5px] text-ink-mute">
           <Tablet size={13} />
           {status.paired
-            ? `${status.activeSessions} tablet(s) ligado(s)${
+            ? `${status.activeSessions === 1 ? '1 tablet ligado' : `${status.activeSessions} tablets ligados`}${
                 status.pairedAt
                   ? ` desde ${new Date(status.pairedAt).toLocaleDateString('pt-PT')}`
                   : ''

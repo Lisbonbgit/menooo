@@ -1,5 +1,11 @@
 # Publicar a app de cozinha — passos que são teus
 
+> **A ORDEM IMPORTA.** Publica o APK (passo 3) **antes** de deployar a web. A
+> página `menooo.com/cozinha` traz um botão que aponta para
+> `/downloads/menooo-cozinha.apk`: se a web for ao ar primeiro, esse botão dá 404
+> a quem lá chegar. A página é `noindex` e só está linkada do painel, mas o
+> caminho do dono é exatamente esse — Definições → link → descarregar.
+
 > **Nada disto foi executado.** Esta sessão não tem acesso SSH ao VPS (foi
 > bloqueado pelo classificador de permissões), não tem a keystore, e não tem
 > impressora. O que está aqui é o que falta, escrito para não se perder.

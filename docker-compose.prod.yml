@@ -28,8 +28,11 @@ services:
       context: .
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
-        NEXT_PUBLIC_STORE_URL: ${NEXT_PUBLIC_STORE_URL:-}
-        NEXT_PUBLIC_DASHBOARD_URL: ${NEXT_PUBLIC_DASHBOARD_URL:-}
+        # Defaults REAIS de propósito: um `:-` vazio injeta '' no build, o `??`
+        # do código não apanha string vazia, e o storefront morre em
+        # `new URL('')` — levando a imagem inteira, que serve os 4 serviços.
+        NEXT_PUBLIC_STORE_URL: ${NEXT_PUBLIC_STORE_URL:-https://menooo.com}
+        NEXT_PUBLIC_DASHBOARD_URL: ${NEXT_PUBLIC_DASHBOARD_URL:-https://painel.menooo.com}
     container_name: comanda-api
     restart: unless-stopped
     depends_on:

@@ -10,6 +10,10 @@ describe('isReservedSlug', () => {
     expect(isReservedSlug('cozinha')).toBe(true);
   });
 
+  it('reserva "downloads" (o file_server do Caddy tapa as subpáginas da loja)', () => {
+    expect(isReservedSlug('downloads')).toBe(true);
+  });
+
   it('é insensível a maiúsculas', () => {
     expect(isReservedSlug('Cozinha')).toBe(true);
     expect(isReservedSlug('COZINHA')).toBe(true);

@@ -64,6 +64,15 @@ object PrinterClient {
                     PrinterException.Kind.IO,
                     e.cause?.message ?: "Erro de impressão.",
                 )
+        } catch (e: InterruptedException) {
+            // O .get() também lança isto. Sem o apanhar, saía cru: o
+            // KitchenPrinterPlugin só apanha PrinterException, o web ficava sem o
+            // code TIMEOUT/REFUSED, e a flag de interrupção ficava engolida.
+            Thread.currentThread().interrupt()
+            throw PrinterException(
+                PrinterException.Kind.IO,
+                "Impressão interrompida antes de terminar.",
+            )
         }
     }
 
