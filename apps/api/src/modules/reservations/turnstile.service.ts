@@ -2,6 +2,8 @@ import { ForbiddenException, Injectable, Logger, ServiceUnavailableException } f
 
 const VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 const REJECT = 'Não foi possível validar o pedido. Tenta de novo.';
+/** O widget do storefront cunha os tokens com esta action; o servidor exige-a. */
+export const EXPECTED_ACTION = 'reserva';
 
 interface SiteverifyResponse {
   success?: boolean;
@@ -87,14 +89,23 @@ export class TurnstileService {
       this.logger.warn(`turnstile_rejected: ${(data['error-codes'] ?? []).join(',')}`);
       throw new ForbiddenException(REJECT);
     }
-    const expectedAction = 'reserva';
-    if (data.action && data.action !== expectedAction) {
-      this.logger.warn(`turnstile_rejected: action=${data.action}`);
+    // O `action` é EXIGIDO, não "verificado se vier": o widget é nosso e manda-o sempre, logo
+    // um token sem action não foi cunhado pelo nosso fluxo. Aceitá-lo em falta tornava o binding
+    // decorativo — e o binding é o que impede que um token do widget de outro fluxo (registo,
+    // contacto) autorize um POST de reserva no dia em que a sitekey for reutilizada.
+    if (data.action !== EXPECTED_ACTION) {
+      this.logger.warn(`turnstile_rejected: action=${data.action ?? '(ausente)'}`);
       throw new ForbiddenException(REJECT);
     }
-    const allowed = (process.env.TURNSTILE_HOSTNAMES ?? '').split(',').map((h) => h.trim()).filter(Boolean);
-    if (allowed.length > 0 && data.hostname && !allowed.includes(data.hostname)) {
-      this.logger.warn(`turnstile_rejected: hostname=${data.hostname}`);
+    // O hostname só é exigível se o dono tiver declarado a lista: sem TURNSTILE_HOSTNAMES não
+    // temos com o que comparar. A sitekey já restringe os domínios do lado da Cloudflare; isto
+    // é a segunda tranca, para o caso de lá ficar um *.pages.dev ou um localhost esquecido.
+    const allowed = (process.env.TURNSTILE_HOSTNAMES ?? '')
+      .split(',')
+      .map((h) => h.trim())
+      .filter(Boolean);
+    if (allowed.length > 0 && !allowed.includes(data.hostname ?? '')) {
+      this.logger.warn(`turnstile_rejected: hostname=${data.hostname ?? '(ausente)'}`);
       throw new ForbiddenException(REJECT);
     }
   }

@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, UseGuard
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import { ReservationsService } from './reservations.service';
+import { TurnstileService } from './turnstile.service';
 import {
   CreateBlockDto,
   CreateManualReservationDto,
@@ -19,7 +20,26 @@ import { TenantId } from '../../common/decorators/tenant-id.decorator';
 @ApiTags('reservations')
 @Controller()
 export class ReservationsController {
-  constructor(private readonly reservations: ReservationsService) {}
+  constructor(
+    private readonly reservations: ReservationsService,
+    private readonly turnstile: TurnstileService,
+  ) {}
+
+  /**
+   * Estado da proteção anti-bot, para o bloco de prontidão do painel.
+   *
+   * Vive aqui e não no /health de propósito: o /health é @Public() e dizer ao mundo
+   * `enforced:false` (ou ver o `consecutiveFailures` a subir) é um oráculo em tempo real sobre
+   * quando o endpoint que auto-confirma mesas está sem proteção — exatamente o sinal que diz a
+   * um atacante quando atacar. O dono precisa dele; a internet não.
+   */
+  @ApiBearerAuth()
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.OWNER, UserRole.STAFF)
+  @Get('reservations/turnstile-status')
+  turnstileStatus() {
+    return this.turnstile.stats();
+  }
 
   // ----- Mesas -----
 

@@ -44,6 +44,35 @@ describe('MailService — teto por destinatário', () => {
     expect(sendMail).toHaveBeenCalledTimes(5);
   });
 
+  // O teto existe para proteger TERCEIROS de bombing (o atacante escolhe o email do cliente).
+  // Os alertas vão para o restaurante, num endereço FIXO por tenant: aplicar-lhes o teto dava
+  // ao atacante um interruptor para desligar o único canal do dono — 5 reservas e ele deixava
+  // de saber que tem reservas. Um restaurante com procura normal passa dos 5/dia sozinho.
+  it('os alertas para o RESTAURANTE nunca são limitados (senão 5 reservas silenciam o dono)', async () => {
+    const alerta = { ...info, customerName: 'Ana', customerPhone: '911111111' };
+    for (let i = 0; i < 12; i++) {
+      await svc.sendNewReservationAlert('reservas@restaurante.pt', alerta);
+    }
+    expect(sendMail).toHaveBeenCalledTimes(12);
+  });
+
+  it('os alertas de cancelamento ao RESTAURANTE também não são limitados', async () => {
+    for (let i = 0; i < 12; i++) {
+      await svc.sendReservationCancelledAlert('reservas@restaurante.pt', { ...info, customerName: 'Ana' });
+    }
+    expect(sendMail).toHaveBeenCalledTimes(12);
+  });
+
+  it('o teto do cliente NÃO é gasto pelos alertas do restaurante (baldes independentes)', async () => {
+    const mesmo = 'dono@restaurante.pt'; // o dono também reservou como cliente
+    for (let i = 0; i < 5; i++) {
+      await svc.sendNewReservationAlert(mesmo, { ...info, customerName: 'X', customerPhone: '9' });
+    }
+    sendMail.mockClear();
+    await svc.sendReservationConfirmed(mesmo, 'Dono', info);
+    expect(sendMail).toHaveBeenCalledTimes(1); // os 5 alertas não gastaram o balde dele
+  });
+
   it('um destinatário DIFERENTE passa mesmo com o primeiro no teto', async () => {
     for (let i = 0; i < 6; i++) {
       await svc.sendReservationConfirmed('ana@x.pt', 'Ana', info);
@@ -68,16 +97,19 @@ describe('MailService — teto por destinatário', () => {
     expect(sendMail).toHaveBeenCalledTimes(5);
   });
 
-  it('os 4 emails de reserva partilham o mesmo balde', async () => {
+  // Os DOIS emails ao CLIENTE partilham o balde (o atacante escolhe o endereço e podia
+  // alternar entre confirmação e cancelamento para dobrar o volume). Os alertas ao
+  // restaurante estão fora — ver os testes acima.
+  it('confirmação e cancelamento AO CLIENTE partilham o mesmo balde', async () => {
     await svc.sendReservationConfirmed('ana@x.pt', 'Ana', info);
     await svc.sendReservationCancelled('ana@x.pt', 'Ana', info, false);
-    await svc.sendNewReservationAlert('ana@x.pt', { ...info, customerName: 'Ana', customerPhone: '912345678' });
-    await svc.sendReservationCancelledAlert('ana@x.pt', { ...info, customerName: 'Ana' });
+    await svc.sendReservationConfirmed('ana@x.pt', 'Ana', info);
+    await svc.sendReservationCancelled('ana@x.pt', 'Ana', info, false);
     await svc.sendReservationConfirmed('ana@x.pt', 'Ana', info);
     expect(sendMail).toHaveBeenCalledTimes(5);
 
-    // o 6.º, seja qual for o método, cai
-    await svc.sendReservationCancelledAlert('ana@x.pt', { ...info, customerName: 'Ana' });
+    // o 6.º cai, seja qual for dos dois — o ciclo create→cancel não dá emails de graça
+    await svc.sendReservationCancelled('ana@x.pt', 'Ana', info, false);
     expect(sendMail).toHaveBeenCalledTimes(5);
   });
 

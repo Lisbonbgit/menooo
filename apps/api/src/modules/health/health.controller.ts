@@ -1,16 +1,12 @@
 import { Controller, Get } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { PrismaService } from '../../prisma/prisma.service';
-import { TurnstileService } from '../reservations/turnstile.service';
 import { Public } from '../../common/decorators/public.decorator';
 
 @ApiTags('health')
 @Controller('health')
 export class HealthController {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly turnstile: TurnstileService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   @Public()
   @Get()
@@ -22,8 +18,10 @@ export class HealthController {
     } catch {
       db = 'down';
     }
-    // `turnstile` é o sinal que o painel lê para pôr a prontidão a vermelho antes de o dono
-    // abrir as reservas ao público (plano, Task 11).
-    return { status: 'ok', db, turnstile: this.turnstile.stats(), timestamp: new Date().toISOString() };
+    // O estado do Turnstile NÃO vive aqui: o /health é @Public() e publicar `enforced` (ou o
+    // `consecutiveFailures` a subir) seria um oráculo em tempo real a dizer a um atacante quando
+    // o endpoint que auto-confirma mesas está sem proteção. O painel lê-o autenticado, em
+    // GET /reservations/turnstile-status.
+    return { status: 'ok', db, timestamp: new Date().toISOString() };
   }
 }

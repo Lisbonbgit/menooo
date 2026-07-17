@@ -701,10 +701,24 @@ async function main() {
     // ---- Turnstile: no-op com TURNSTILE_SECRET_KEY vazia (dev/e2e) ----
     const health = await req('GET', '/health');
     check('GET /health 200', health.status === 200, `got ${health.status}`);
+    // O estado do Turnstile é AUTENTICADO (não vive no /health público: seria um oráculo a
+    // dizer a um atacante quando a proteção está desligada).
+    const ts = await req('GET', '/reservations/turnstile-status', { token: ownerToken });
     check(
-      'health diz turnstile.enforced=false (secret vazia — pré-condição do no-op)',
-      health.json?.turnstile?.enforced === false,
-      JSON.stringify(health.json?.turnstile),
+      'turnstile-status diz enforced=false (secret vazia — pré-condição do no-op)',
+      ts.json?.enforced === false,
+      JSON.stringify(ts.json),
+    );
+    check(
+      '/health NÃO revela o estado do turnstile (é público)',
+      health.json?.turnstile === undefined,
+      JSON.stringify(health.json),
+    );
+    const tsAnon = await req('GET', '/reservations/turnstile-status');
+    check(
+      'turnstile-status sem token → 401 (não é público)',
+      tsAnon.status === 401,
+      `got ${tsAnon.status}`,
     );
     // Com a secret vazia o verify() sai à primeira linha: o token nem é olhado. Este POST leva
     // um token que a Cloudflare recusaria — se algum dia isto der 403, o no-op deixou de o ser.

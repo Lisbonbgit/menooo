@@ -55,11 +55,21 @@ export class TenantsService {
       // "aberto" efetivo = toggle manual E dentro do horário
       isOpen: computeOpenNow(tenant, openingHours),
       reservationsEnabled: rest.reservationsEnabled,
-      phone: rest.phone,
-      address: rest.address,
-      zipCode: rest.zipCode,
-      reservationMaxPartySize: rest.reservationMaxPartySize,
-      reservationMaxAdvanceDays: rest.reservationMaxAdvanceDays,
+      // Contacto e morada SÓ para quem ligou as reservas. O campo "Morada" das Definições nunca
+      // foi publicado até aqui — há donos que lá terão posto a morada de faturação, e publicá-la
+      // para toda a gente por causa de uma funcionalidade que não usam seria uma fuga a sério.
+      // Quem liga o interruptor está a pedir para ser encontrado: aí é intencional (e a página
+      // de reserva precisa — é o cliente que se desloca) . A página de gestão não depende disto:
+      // recebe o `restaurantPhone` do próprio GET /public/reservations/:code.
+      ...(rest.reservationsEnabled
+        ? {
+            phone: rest.phone,
+            address: rest.address,
+            zipCode: rest.zipCode,
+            reservationMaxPartySize: rest.reservationMaxPartySize,
+            reservationMaxAdvanceDays: rest.reservationMaxAdvanceDays,
+          }
+        : {}),
     };
   }
 

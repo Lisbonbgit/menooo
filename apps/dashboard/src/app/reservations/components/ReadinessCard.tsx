@@ -151,10 +151,12 @@ export function ReadinessCard({
   // Sinal do Turnstile: em produção, `enforced:false` = o POST público auto-confirma mesas
   // reais sem proteção nenhuma. É aqui que o dono decide abrir ao público — é aqui que tem
   // de ver o vermelho.
+  // Autenticado de propósito: o /health é público e dizer ao mundo `enforced:false` seria um
+  // oráculo a apontar a janela para atacar o endpoint que auto-confirma mesas.
   const health = useQuery({
-    queryKey: ['health'],
+    queryKey: ['turnstile-status'],
     queryFn: async () =>
-      (await api.get<{ turnstile?: { enforced: boolean } }>('/health')).data,
+      (await api.get<{ enforced: boolean }>('/reservations/turnstile-status')).data,
     staleTime: 60_000,
     retry: false,
   });
@@ -171,9 +173,8 @@ export function ReadinessCard({
 
   // O painel não conhece o ambiente da API; conhece o seu. Em `next dev` isto é
   // 'development' e o aviso nunca dispara — o build de produção é que fala com a API de
-  // produção. (A API expõe `turnstile.enforced` no /health desde a R3.)
-  const turnstileOff =
-    process.env.NODE_ENV === 'production' && health.data?.turnstile?.enforced === false;
+  // produção. (A API expõe isto em GET /reservations/turnstile-status, autenticado.)
+  const turnstileOff = process.env.NODE_ENV === 'production' && health.data?.enforced === false;
 
   const ready = canEnable && days.length > 0 && hasEmail && shared;
   const checklistOpen = showDetails || !ready || !enabled;

@@ -142,9 +142,12 @@ export function ReservarClient({ slug }: { slug: string }) {
   const from = todayISO();
   // min(30, maxAdvance) chips — numa loja com 7 dias de antecedência, 23 chips a dizer
   // sempre «sem horários» seriam uma montra a mentir.
-  const dayCount = s ? Math.max(1, Math.min(30, s.reservationMaxAdvanceDays)) : 1;
+  // Os defaults espelham o schema (30 dias / 12 pessoas): a API só manda estes campos quando as
+  // reservas estão ligadas, e nesta página estão — mas se faltarem, o fallback tem de ser o
+  // valor real do servidor, senão a montra mostrava menos dias/lugares do que aceita.
+  const dayCount = Math.max(1, Math.min(30, s?.reservationMaxAdvanceDays ?? 30));
   const to = addDaysISO(from, dayCount - 1);
-  const maxParty = s ? Math.max(1, Math.min(50, s.reservationMaxPartySize)) : 1;
+  const maxParty = Math.max(1, Math.min(50, s?.reservationMaxPartySize ?? 12));
 
   const days = useReservationDays(slug, from, to, party, enabled && !placed);
   const slots = useReservationSlots(slug, placed ? null : date, party);

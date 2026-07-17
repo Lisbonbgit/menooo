@@ -63,8 +63,16 @@ export class MailService {
   private readonly recentByRecipient = new Map<string, number[]>();
   private static readonly MAX_PER_DAY = 5;
 
-  /** Teto por destinatário: o Turnstile PREÇA o abuso, não o limita. Protege terceiros e a
-   *  reputação do MAIL_FROM, que é partilhado por TODOS os tenants. */
+  /**
+   * Teto por destinatário: o Turnstile PREÇA o abuso, não o limita. Protege o TERCEIRO cuja
+   * caixa é usada como alvo e a reputação do MAIL_FROM, que é partilhado por TODOS os tenants.
+   *
+   * ⚠️ SÓ para emails cujo destinatário é ESCOLHIDO POR QUEM RESERVA (confirmação e
+   * cancelamento ao cliente). NUNCA para os alertas que vão ao RESTAURANTE: esse endereço é
+   * fixo, um por tenant, logo o teto viraria uma arma — 5 reservas e o dono deixava de receber
+   * alertas 24h, e o email é o único canal dele quando não tem o painel aberto. O bombing do
+   * dono trava-se pelo cap por contacto e pelo Turnstile, não silenciando-o.
+   */
   private overRecipientLimit(to: string): boolean {
     const key = to.trim().toLowerCase();
     const now = Date.now();
@@ -348,10 +356,8 @@ export class MailService {
     to: string,
     info: ReservationMailInfo & { customerName: string; customerPhone: string; notes?: string | null },
   ) {
-    if (this.overRecipientLimit(to)) {
-      this.logger.warn(`mail_rate_limited: destinatário atingiu o teto diário de emails de reserva`);
-      return;
-    }
+    // SEM teto por destinatário: ver overRecipientLimit(). O endereço do restaurante é fixo —
+    // limitá-lo deixava um atacante silenciar o dono com 5 reservas.
     await this.send(
       to,
       `Nova reserva — ${info.restaurantName} (${info.code})`,
@@ -368,10 +374,7 @@ export class MailService {
 
   /** 9. Aviso ao restaurante: reserva cancelada. */
   async sendReservationCancelledAlert(to: string, info: ReservationMailInfo & { customerName: string }) {
-    if (this.overRecipientLimit(to)) {
-      this.logger.warn(`mail_rate_limited: destinatário atingiu o teto diário de emails de reserva`);
-      return;
-    }
+    // SEM teto por destinatário: ver overRecipientLimit(). Alerta para o restaurante.
     await this.send(
       to,
       `Reserva cancelada — ${info.restaurantName} (${info.code})`,

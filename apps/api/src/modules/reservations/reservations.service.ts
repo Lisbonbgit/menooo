@@ -656,7 +656,38 @@ export class ReservationsService {
     });
   }
 
+  /**
+   * O PATCH de `reservationsEnabled` recusa ligar as reservas com 0 mesas reserváveis, mas isso
+   * só guarda a TRANSIÇÃO. Sem isto chega-se ao mesmo estado proibido pelas traseiras: ligar com
+   * uma mesa e depois apagá-la/desativá-la — e o resultado é o mesmo, uma montra a prometer
+   * "Reservar mesa" e 30 dias vazios, sem sinal nenhum ao dono.
+   */
+  private async assertStillBookable(
+    tx: Prisma.TransactionClient | PrismaService,
+    tenantId: string,
+    excludeTableId: string,
+  ) {
+    const tenant = await tx.tenant.findUnique({
+      where: { id: tenantId },
+      select: { reservationsEnabled: true },
+    });
+    if (!tenant?.reservationsEnabled) return; // reservas desligadas: o dono faz o que quiser
+    const remaining = await tx.table.count({
+      where: { tenantId, active: true, bookableOnline: true, id: { not: excludeTableId } },
+    });
+    if (remaining === 0) {
+      throw new ConflictException(
+        'Esta é a tua última mesa reservável online e as reservas estão ligadas. ' +
+          'Desliga as reservas online primeiro, ou cria outra mesa.',
+      );
+    }
+  }
+
   async updateTable(tenantId: string, id: string, dto: UpdateTableDto) {
+    // só verificar quando a edição TIRA a mesa do online — tornar reservável nunca parte nada
+    if (dto.active === false || dto.bookableOnline === false) {
+      await this.assertStillBookable(this.prisma, tenantId, id);
+    }
     const result = await this.prisma.table.updateMany({ where: { id, tenantId }, data: dto });
     if (result.count === 0) throw new NotFoundException('Mesa não encontrada.');
     return this.prisma.table.findUniqueOrThrow({ where: { id } });
@@ -671,6 +702,8 @@ export class ReservationsService {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId}))`;
         const owned = await tx.table.count({ where: { id, tenantId } });
         if (owned === 0) throw new NotFoundException('Mesa não encontrada.');
+        // dentro do lock: ninguém cria outra mesa entre este check e o delete
+        await this.assertStillBookable(tx, tenantId, id);
         const history = await tx.reservationTable.count({ where: { tableId: id } });
         if (history > 0) {
           throw new ConflictException(
