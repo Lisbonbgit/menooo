@@ -55,10 +55,15 @@ export class TenantsService {
       // "aberto" efetivo = toggle manual E dentro do horário
       isOpen: computeOpenNow(tenant, openingHours),
       reservationsEnabled: rest.reservationsEnabled,
+      phone: rest.phone,
+      address: rest.address,
+      zipCode: rest.zipCode,
+      reservationMaxPartySize: rest.reservationMaxPartySize,
+      reservationMaxAdvanceDays: rest.reservationMaxAdvanceDays,
     };
   }
 
-  /** Lojas publicamente visíveis (para o sitemap): slug + data de atualização. */
+  /** Lojas publicamente visíveis (para o sitemap): slug + data de atualização + flag de reservas. */
   async listPublicStores() {
     const tenants = await this.prisma.tenant.findMany({
       where: { status: 'ACTIVE' },
@@ -67,7 +72,11 @@ export class TenantsService {
     });
     return tenants
       .filter((t) => isSubscriptionUsable(t.account))
-      .map((t) => ({ slug: t.slug, updatedAt: t.updatedAt }));
+      .map((t) => ({
+        slug: t.slug,
+        updatedAt: t.updatedAt,
+        reservationsEnabled: t.reservationsEnabled,
+      }));
   }
 
   /** Indica se a loja aceita encomendas neste momento (usado no checkout). */
@@ -128,6 +137,18 @@ export class TenantsService {
   async updateMine(tenantId: string, dto: UpdateTenantDto) {
     await this.ensure(tenantId);
     const data: Record<string, unknown> = { ...dto };
+
+    // ligar reservas sem mesas publica uma loja partida (30 dias vazios) — spec §11
+    if (dto.reservationsEnabled === true) {
+      const bookable = await this.prisma.table.count({
+        where: { tenantId, active: true, bookableOnline: true },
+      });
+      if (bookable === 0) {
+        throw new BadRequestException(
+          'Cria pelo menos uma mesa reservável online antes de ligar as reservas.',
+        );
+      }
+    }
 
     // cores da montra: normaliza, valida legibilidade; vazio repõe o tema
     for (const field of ['brandColor', 'heroColor'] as const) {

@@ -51,6 +51,21 @@ async function bootstrap() {
     .build();
   SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app, swagger));
 
+  // Aviso ruidoso: prod sem secret = reservas públicas a responder 503 (fail-closed, spec §5).
+  // O estado "sem proteção" nasce de um typo ou de um .env perdido num redeploy — tem de gritar.
+  if (process.env.NODE_ENV === 'production') {
+    if (process.env.TURNSTILE_SECRET_KEY) {
+      // eslint-disable-next-line no-console
+      console.log('🛡️  Turnstile ATIVO nas reservas públicas');
+    } else if (process.env.TURNSTILE_OPTIONAL === '1') {
+      // eslint-disable-next-line no-console
+      console.warn('⚠️  Turnstile DESLIGADO por TURNSTILE_OPTIONAL=1 — reservas públicas sem proteção');
+    } else {
+      // eslint-disable-next-line no-console
+      console.error('❌ TURNSTILE_SECRET_KEY em falta: as reservas públicas vão responder 503');
+    }
+  }
+
   const port = Number(process.env.API_PORT ?? 3001);
   await app.listen(port);
   // eslint-disable-next-line no-console

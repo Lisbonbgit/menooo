@@ -13,6 +13,12 @@ export interface Store {
   deliveryFee: string;
   minOrderValue: string;
   isOpen: boolean;
+  reservationsEnabled: boolean;
+  phone: string | null;
+  address: string | null;
+  zipCode: string | null;
+  reservationMaxPartySize: number;
+  reservationMaxAdvanceDays: number;
 }
 
 export interface Modifier {

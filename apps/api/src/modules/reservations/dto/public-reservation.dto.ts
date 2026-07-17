@@ -20,6 +20,9 @@ export class CreatePublicReservationDto {
   @IsEmail() @MaxLength(200) customerEmail!: string;
   @IsOptional() @IsString() @MaxLength(500) notes?: string;
   @IsOptional() @IsBoolean() marketingConsent?: boolean;
+  // `main.ts` usa forbidNonWhitelisted: true — sem esta declaração TODOS os POSTs levam 400
+  // assim que a sitekey existir no storefront. Não é opcional de facto.
+  @IsOptional() @IsString() @MaxLength(2048) turnstileToken?: string;
 }
 
 export class CancelReservationDto {

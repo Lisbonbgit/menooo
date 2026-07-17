@@ -490,6 +490,10 @@ model Reservation {
   customerName     String
   customerPhone    String
   customerEmail    String? // obrigatório ONLINE; opcional MANUAL
+  // Chaves normalizadas SÓ para o cap anti-spam por contacto (ver contact.util.ts).
+  // Os campos acima mantêm-se crus, para exibição.
+  contactEmailKey  String? // trim + lowercase
+  contactPhoneKey  String? // só dígitos, últimos 9
   notes            String?
   marketingConsent Boolean           @default(false) // consistente com Order (registo RGPD)
   cancelledBy      String? // CUSTOMER | RESTAURANT
@@ -497,6 +501,8 @@ model Reservation {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
   @@index([tenantId, startsAt])
+  @@index([tenantId, contactEmailKey])
+  @@index([tenantId, contactPhoneKey])
 }
 
 model ReservationTable {

@@ -60,6 +60,27 @@ export class MailService {
     return !!this.transporter;
   }
 
+  private readonly recentByRecipient = new Map<string, number[]>();
+  private static readonly MAX_PER_DAY = 5;
+
+  /** Teto por destinatário: o Turnstile PREÇA o abuso, não o limita. Protege terceiros e a
+   *  reputação do MAIL_FROM, que é partilhado por TODOS os tenants. */
+  private overRecipientLimit(to: string): boolean {
+    const key = to.trim().toLowerCase();
+    const now = Date.now();
+    const win = (this.recentByRecipient.get(key) ?? []).filter((t) => now - t < 86_400_000);
+    if (win.length >= MailService.MAX_PER_DAY) {
+      this.recentByRecipient.set(key, win);
+      return true;
+    }
+    win.push(now);
+    this.recentByRecipient.set(key, win);
+    if (this.recentByRecipient.size > 5_000) {
+      for (const [k, v] of this.recentByRecipient) if (v.every((t) => now - t >= 86_400_000)) this.recentByRecipient.delete(k);
+    }
+    return false;
+  }
+
   /** Envio "fire-and-forget": nunca rebenta o fluxo que o chamou. */
   async send(to: string, subject: string, bodyHtml: string) {
     if (!this.transporter) {
@@ -278,6 +299,10 @@ export class MailService {
 
   /** 6. Reserva confirmada — enviado ao cliente. */
   async sendReservationConfirmed(to: string, customerName: string, info: ReservationMailInfo) {
+    if (this.overRecipientLimit(to)) {
+      this.logger.warn(`mail_rate_limited: destinatário atingiu o teto diário de emails de reserva`);
+      return;
+    }
     await this.send(
       to,
       `Reserva confirmada — ${info.restaurantName} (${info.code})`,
@@ -299,6 +324,10 @@ export class MailService {
     info: ReservationMailInfo,
     byRestaurant: boolean,
   ) {
+    if (this.overRecipientLimit(to)) {
+      this.logger.warn(`mail_rate_limited: destinatário atingiu o teto diário de emails de reserva`);
+      return;
+    }
     await this.send(
       to,
       `Reserva cancelada — ${info.restaurantName} (${info.code})`,
@@ -319,6 +348,10 @@ export class MailService {
     to: string,
     info: ReservationMailInfo & { customerName: string; customerPhone: string; notes?: string | null },
   ) {
+    if (this.overRecipientLimit(to)) {
+      this.logger.warn(`mail_rate_limited: destinatário atingiu o teto diário de emails de reserva`);
+      return;
+    }
     await this.send(
       to,
       `Nova reserva — ${info.restaurantName} (${info.code})`,
@@ -335,6 +368,10 @@ export class MailService {
 
   /** 9. Aviso ao restaurante: reserva cancelada. */
   async sendReservationCancelledAlert(to: string, info: ReservationMailInfo & { customerName: string }) {
+    if (this.overRecipientLimit(to)) {
+      this.logger.warn(`mail_rate_limited: destinatário atingiu o teto diário de emails de reserva`);
+      return;
+    }
     await this.send(
       to,
       `Reserva cancelada — ${info.restaurantName} (${info.code})`,
