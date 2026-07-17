@@ -8,6 +8,7 @@ import {
   CreateManualReservationDto,
   CreateServiceDto,
   CreateTableDto,
+  SetLayoutDto,
   SetWindowsDto,
   UpdateReservationDto,
   UpdateReservationStatusDto,
@@ -59,6 +60,23 @@ export class ReservationsController {
   @Post('tables')
   createTable(@TenantId() tenantId: string, @Body() dto: CreateTableDto) {
     return this.reservations.createTable(tenantId, dto);
+  }
+
+  /**
+   * Layout do mapa de sala de uma área inteira.
+   *
+   * Declarada ANTES de 'tables/:id': o Nest resolve as rotas por ordem de registo, e um
+   * 'tables/:id' declarado primeiro apanharia 'layout' como se fosse um id de mesa.
+   *
+   * O @Roles é explícito porque o RolesGuard falha ABERTO (`if (!required) return true`): sem o
+   * decorador, o tablet da COZINHA chega ao layout da sala.
+   */
+  @ApiBearerAuth()
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.OWNER, UserRole.STAFF)
+  @Put('tables/layout')
+  setLayout(@TenantId() tenantId: string, @Body() dto: SetLayoutDto) {
+    return this.reservations.setLayout(tenantId, dto);
   }
 
   @ApiBearerAuth()

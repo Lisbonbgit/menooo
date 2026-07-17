@@ -42,6 +42,26 @@ export class UpdateTableDto {
 }
 
 // ==========================================================================
+// Mapa de sala — posições das mesas
+// ==========================================================================
+
+export class LayoutPositionDto {
+  @IsString() @IsNotEmpty() id!: string;
+  /** 8 colunas (0..7): a grelha é fixa para o `x` querer dizer o mesmo em todos os ecrãs — ver §6 do spec. */
+  @IsInt() @Min(0) @Max(7) x!: number;
+  @IsInt() @Min(0) @Max(49) y!: number;
+}
+
+export class SetLayoutDto {
+  /** `null`/ausente = a área «Sem área» (o `Table.area` é anulável). */
+  @IsOptional() @IsString() @MaxLength(60) area?: string | null;
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => LayoutPositionDto)
+  positions!: LayoutPositionDto[];
+}
+
+// ==========================================================================
 // Reservas (painel)
 // ==========================================================================
 

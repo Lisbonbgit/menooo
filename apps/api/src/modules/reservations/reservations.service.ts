@@ -26,6 +26,7 @@ import {
   CreateManualReservationDto,
   CreateServiceDto,
   CreateTableDto,
+  SetLayoutDto,
   SetWindowsDto,
   UpdateReservationDto,
   UpdateReservationStatusDto,
@@ -695,9 +696,49 @@ export class ReservationsService {
     if (dto.active === false || dto.bookableOnline === false) {
       await this.assertStillBookable(this.prisma, tenantId, id);
     }
-    const result = await this.prisma.table.updateMany({ where: { id, tenantId }, data: dto });
+    // Mudar de área leva o x,y consigo e a mesa aterra em cima de outra na sala nova, sem
+    // ninguém ter arrastado nada. A posição numa sala não quer dizer nada noutra.
+    const data: Prisma.TableUpdateManyMutationInput = { ...dto };
+    if (dto.area !== undefined) {
+      const atual = await this.prisma.table.findFirst({
+        where: { id, tenantId },
+        select: { area: true },
+      });
+      if (atual && (atual.area ?? null) !== (dto.area ?? null)) {
+        data.x = null;
+        data.y = null;
+      }
+    }
+    const result = await this.prisma.table.updateMany({ where: { id, tenantId }, data });
     if (result.count === 0) throw new NotFoundException('Mesa não encontrada.');
     return this.prisma.table.findUniqueOrThrow({ where: { id } });
+  }
+
+  /**
+   * Grava o layout de uma área inteira. O PUT leva TODAS as mesas da área, não só as que se
+   * mexeram: se levasse só as duas de uma troca, o auto-layout das restantes nunca ficaria
+   * gravado e dois dispositivos veriam salas diferentes até alguém arrastar.
+   * Transação: uma troca são duas mesas a mudar, e o estado intermédio seria visível.
+   */
+  async setLayout(tenantId: string, dto: SetLayoutDto) {
+    const ids = dto.positions.map((p) => p.id);
+    if (new Set(ids).size !== ids.length) throw new BadRequestException('Mesas repetidas.');
+    const chaves = dto.positions.map((p) => `${p.x},${p.y}`);
+    if (new Set(chaves).size !== chaves.length) {
+      throw new BadRequestException('Duas mesas na mesma célula.');
+    }
+    return this.prisma.$transaction(async (tx) => {
+      // a área entra no where: uma mesa de outra área (ou de outro tenant) dá 404, não um
+      // update silencioso que a arrastava para uma sala onde ninguém a pôs
+      const owned = await tx.table.count({
+        where: { id: { in: ids }, tenantId, area: dto.area ?? null },
+      });
+      if (owned !== ids.length) throw new NotFoundException('Mesa não encontrada.');
+      for (const p of dto.positions) {
+        await tx.table.updateMany({ where: { id: p.id, tenantId }, data: { x: p.x, y: p.y } });
+      }
+      return { saved: dto.positions.length };
+    });
   }
 
   /** Apaga a mesa; recusa (409) se tiver reservas no histórico — desativa-a em vez disso. */
