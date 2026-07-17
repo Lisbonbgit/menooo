@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { CalendarClock, Clock, CalendarOff, Trash2 } from 'lucide-react';
+import { ArrowUp, CalendarClock, Clock, CalendarOff, Trash2 } from 'lucide-react';
 import {
   useTenantConfig,
   useUpdateTenantConfig,
@@ -35,7 +35,7 @@ const toMin = (s: string) => {
 };
 
 /** Nest devolve `message` como string ou array de strings — mostramos sempre a do servidor. */
-function serverError(e: any, fallback: string): string {
+export function serverError(e: any, fallback: string): string {
   const msg = e?.response?.data?.message;
   if (Array.isArray(msg) && msg.length > 0) return msg.join(' ');
   if (typeof msg === 'string' && msg) return msg;
@@ -66,8 +66,13 @@ export function ReservationSettings(): JSX.Element {
 // Bloco 1 — Reservas online
 // ==========================================================================
 
+/**
+ * O interruptor NÃO entra neste form. Este cartão copia a config para estado local e o
+ * `save` só envia o que mudou: com o toggle aqui dentro, ligar as reservas no topo da
+ * página deixava este `form` obsoleto e o próximo «Guardar» voltava a desligá-las em
+ * silêncio. Fonte única = o bloco de prontidão (ReadinessCard).
+ */
 interface ConfigForm {
-  reservationsEnabled: boolean;
   reservationDurationMin: string;
   reservationBufferMin: string;
   reservationMinNoticeMin: string;
@@ -76,7 +81,6 @@ interface ConfigForm {
 }
 
 const CONFIG_DEFAULTS: ConfigForm = {
-  reservationsEnabled: false,
   reservationDurationMin: '90',
   reservationBufferMin: '15',
   reservationMinNoticeMin: '0',
@@ -93,7 +97,6 @@ function OnlineConfigCard() {
   useEffect(() => {
     if (!config.data) return;
     setForm({
-      reservationsEnabled: config.data.reservationsEnabled,
       reservationDurationMin: String(config.data.reservationDurationMin),
       reservationBufferMin: String(config.data.reservationBufferMin),
       reservationMinNoticeMin: String(config.data.reservationMinNoticeMin),
@@ -106,9 +109,6 @@ function OnlineConfigCard() {
     e.preventDefault();
     if (!config.data) return;
     const patch: Partial<ReservationConfig> = {};
-    if (form.reservationsEnabled !== config.data.reservationsEnabled) {
-      patch.reservationsEnabled = form.reservationsEnabled;
-    }
     const numFields: Exclude<keyof ReservationConfig, 'reservationsEnabled'>[] = [
       'reservationDurationMin',
       'reservationBufferMin',
@@ -143,18 +143,34 @@ function OnlineConfigCard() {
       desc="Regras gerais que os clientes seguem ao reservar na tua loja."
     >
       <form onSubmit={save} className="space-y-4">
-        <div className="flex items-center justify-between rounded-xl border border-line px-3.5 py-3">
+        {/* Estado lido diretamente da query (nunca do `form`): sem estado local, não há
+            nada que possa ficar obsoleto e desligar as reservas no próximo «Guardar». */}
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line bg-cream/40 px-3.5 py-3">
           <div>
-            <p className="text-[13.5px] font-medium">Aceitar reservas online</p>
+            <p className="flex items-center gap-2 text-[13.5px] font-medium">
+              Aceitar reservas online
+              <span
+                className={
+                  'rounded-full px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide ' +
+                  (config.data?.reservationsEnabled
+                    ? 'bg-green-100 text-green-800'
+                    : 'bg-stone-200 text-stone-600')
+                }
+              >
+                {config.data?.reservationsEnabled ? 'Ligadas' : 'Desligadas'}
+              </span>
+            </p>
             <p className="text-[11.5px] text-ink-mute">
-              Quando desligado, o separador de reservas desaparece da tua loja.
+              O interruptor está no bloco de prontidão, no topo desta página.
             </p>
           </div>
-          <Toggle
-            on={form.reservationsEnabled}
-            onChange={(v) => setForm((f) => ({ ...f, reservationsEnabled: v }))}
-            label="Alternar reservas online"
-          />
+          <button
+            type="button"
+            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+            className="flex items-center gap-1.5 rounded-lg border border-line bg-white px-3 py-1.5 text-[12px] font-medium text-ink-soft shadow-card transition-colors hover:border-brand/40 hover:text-brand-dark"
+          >
+            <ArrowUp size={13} /> Ir ao interruptor
+          </button>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -502,31 +518,5 @@ function NumField({
   );
 }
 
-function Toggle({
-  on,
-  onChange,
-  label,
-}: {
-  on: boolean;
-  onChange: (v: boolean) => void;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={() => onChange(!on)}
-      aria-label={label}
-      className={
-        'relative h-7 w-12 shrink-0 rounded-full transition-colors ' +
-        (on ? 'bg-green-500' : 'bg-stone-300')
-      }
-    >
-      <span
-        className={
-          'absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-all ' +
-          (on ? 'left-6' : 'left-1')
-        }
-      />
-    </button>
-  );
-}
+// O interruptor de reservas vive no ReadinessCard (topo da aba Reservas) — ver a nota em
+// ConfigForm. Não repor um Toggle aqui sem repor também o problema que isso trazia.

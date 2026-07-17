@@ -8,8 +8,9 @@ import { AppShell } from '@/components/AppShell';
 import { TablesManager } from '@/components/TablesManager';
 import { ReservationSettings } from '@/components/ReservationSettings';
 import { ReservationFormModal } from '@/components/ReservationFormModal';
+import { ReadinessCard, ShareCard } from './components/ReadinessCard';
 import {
-  useLiveReservations, useTables, useBlocks, useCreateBlock, useDeleteBlock,
+  useLiveReservations, useBlocks, useCreateBlock, useDeleteBlock,
   useUpdateReservationStatus,
 } from '@/lib/reservations-hooks';
 import type { Reservation, ReservationStatus } from '@/lib/reservation-types';
@@ -43,7 +44,6 @@ export default function ReservationsPage() {
   const [modal, setModal] = useState<{ mode: 'create' | 'edit'; reservation?: Reservation } | null>(null);
 
   const { reservations, connected } = useLiveReservations(date);
-  const tables = useTables();
   const blocks = useBlocks();
   const createBlock = useCreateBlock();
   const deleteBlock = useDeleteBlock();
@@ -52,7 +52,6 @@ export default function ReservationsPage() {
   const todayBlock = (blocks.data ?? []).find((b) => b.date === date);
   const confirmed = reservations.filter((r) => r.status === 'CONFIRMED');
   const covers = confirmed.reduce((sum, r) => sum + r.partySize, 0);
-  const noTables = (tables.data ?? []).length === 0;
 
   async function setStatus(r: Reservation, status: ReservationStatus) {
     if (status === 'CANCELLED' && !confirm(`Cancelar a reserva de ${r.customerName}?`)) return;
@@ -114,6 +113,10 @@ export default function ReservationsPage() {
         ) : null
       }
     >
+      {/* prontidão + interruptor: fora dos separadores porque o estado de "publicado ao
+          público" vale para a aba toda, e é o que o dono vem cá confirmar */}
+      <ReadinessCard onGoTables={() => setTab('tables')} onGoSettings={() => setTab('settings')} />
+
       {/* separadores */}
       <div className="mb-6 flex gap-1.5 border-b border-line">
         {TABS.map((t) => (
@@ -134,12 +137,8 @@ export default function ReservationsPage() {
 
       {tab === 'day' && (
         <>
-          {noTables && (
-            <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-900">
-              <strong>Ainda não tens mesas.</strong> Cria as tuas mesas no separador Mesas para
-              começares a aceitar reservas.
-            </div>
-          )}
+          {/* o aviso de "sem mesas" saiu daqui: o bloco de prontidão, logo acima, di-lo
+              melhor (mesas RESERVÁVEIS, não mesas) e trava o interruptor */}
           {todayBlock && (
             <div className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-800">
               <strong>Reservas pausadas neste dia.</strong> Os clientes não conseguem reservar
@@ -245,7 +244,12 @@ export default function ReservationsPage() {
       )}
 
       {tab === 'tables' && <TablesManager />}
-      {tab === 'settings' && <ReservationSettings />}
+      {tab === 'settings' && (
+        <div className="space-y-5">
+          <ReservationSettings />
+          <ShareCard />
+        </div>
+      )}
 
       {modal && (
         <ReservationFormModal

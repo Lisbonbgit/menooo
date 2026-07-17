@@ -1,8 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { toast } from 'sonner';
-import { Plus, Bike, ShoppingBag, Clock, UtensilsCrossed } from 'lucide-react';
+import { Plus, Bike, ShoppingBag, Clock, UtensilsCrossed, CalendarDays } from 'lucide-react';
 import { useStore, useMenu } from '@/lib/store-hooks';
 import { useCartStore } from '@/lib/cart-store';
 import { ProductOptions } from '@/components/ProductOptions';
@@ -123,6 +124,21 @@ export function StoreClient({ slug }: { slug: string }) {
               </InfoChip>
             )}
           </div>
+
+          {/* CTA das reservas — vive no hero, que renderiza SEMPRE. Fora da nav de
+              categorias de propósito: essa só aparece com mais de 1 categoria (uma
+              loja pequena é justamente quem mais quer reservas) e o overflow-x-auto
+              empurrava o botão para fora do ecrã em lojas com muitas categorias. */}
+          {s.reservationsEnabled && (
+            <div className="animate-fade-up mt-4" style={{ animationDelay: '0.15s' }}>
+              <Link
+                href={`/${s.slug}/reservar`}
+                className="inline-flex items-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white shadow-lift transition-colors hover:bg-brand-dark"
+              >
+                <CalendarDays size={15} /> Reservar mesa
+              </Link>
+            </div>
+          )}
         </div>
       </header>
 

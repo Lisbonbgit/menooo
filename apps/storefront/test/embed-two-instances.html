@@ -1,0 +1,95 @@
+<!doctype html>
+<!--
+  Menooo — banco de ensaio do embed.js com as DUAS instâncias (encomendas + reservas),
+  que é como o dono o vai colar. NÃO está em public/: isto não pode ser servido em
+  menooo.com. Página de teste manual, fora do build.
+
+  Como correr (precisa do storefront a servir o embed.js, senão o `new URL(script.src)`
+  não tem origem):
+    1. storefront:  pnpm --filter @comanda/storefront dev      (porta 3000)
+    2. este ficheiro, NOUTRA porta — o site do dono nunca é o menooo.com:
+       cd apps/storefront/test && python3 -m http.server 8000
+    3. abrir http://localhost:8000/embed-two-instances.html
+
+  A loja demo tem de ter as reservas LIGADAS para o iframe de /reservar mostrar o fluxo.
+-->
+<html lang="pt-PT">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Teste — embed.js com duas instâncias</title>
+    <style>
+      body {
+        font: 15px/1.6 system-ui, -apple-system, sans-serif;
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 24px 20px 140px;
+        color: #1c1917;
+      }
+      h1 { font-size: 22px; }
+      h2 { font-size: 16px; margin-top: 28px; }
+      code { background: #f5f5f4; padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+      .own {
+        display: inline-block;
+        margin: 4px 6px 4px 0;
+        padding: 10px 16px;
+        border: 1px solid #d6d3d1;
+        border-radius: 8px;
+        background: #fff;
+        cursor: pointer;
+        font: inherit;
+      }
+      ol { padding-left: 20px; }
+      li { margin: 6px 0; }
+      .tall { height: 900px; background: linear-gradient(#fafaf9, #e7e5e4); border-radius: 8px; }
+    </style>
+  </head>
+  <body>
+    <h1>embed.js — encomendas + reservas na mesma página</h1>
+    <p>
+      Simula o site do restaurante com os <strong>dois</strong> scripts colados. Ambos com
+      <code>data-slug="pizzaria-demo"</code>; o segundo com <code>data-reservas="1"</code>.
+    </p>
+
+    <h2>Gatilhos próprios do dono (botão dele, não o flutuante)</h2>
+    <button class="own" data-menooo-order>Peça aqui (data-menooo-order)</button>
+    <button class="own" data-menooo-reservar>Reservar (data-menooo-reservar)</button>
+    <a class="own" href="#menooo-order">Link #menooo-order</a>
+    <a class="own" href="#menooo-reservar">Link #menooo-reservar</a>
+
+    <h2>Consola</h2>
+    <button class="own" onclick="console.log(Object.keys(window.MenoooWidget))">
+      Ver chaves do MenoooWidget
+    </button>
+    <button class="own" onclick="window.MenoooWidget.reservas.open()">.reservas.open()</button>
+    <button class="own" onclick="window.MenoooWidget.open()">.open() (alias = 1.ª instância)</button>
+
+    <h2>Lista de verificação</h2>
+    <ol>
+      <li>Os <strong>dois</strong> botões flutuantes são visíveis: «Ver Menu &amp; Encomendar»
+        em <code>bottom:20px</code> e «Reservar Mesa» em <code>bottom:88px</code> — empilhados,
+        não sobrepostos.</li>
+      <li><code>data-menooo-order</code> abre <strong>um só</strong> popup (a loja), não dois.</li>
+      <li><code>data-menooo-reservar</code> abre <strong>um só</strong> popup, em
+        <code>/pizzaria-demo/reservar</code>.</li>
+      <li><code>window.MenoooWidget</code> tem <code>order</code>, <code>reservas</code>,
+        <code>open</code>, <code>close</code>.</li>
+      <li><code>.open()</code> (alias) abre as <strong>encomendas</strong> — é a 1.ª instância.</li>
+      <li>Escape fecha o popup aberto; com nenhum aberto não faz nada.</li>
+      <li>Com um popup aberto a página <strong>não</strong> faz scroll por baixo; ao fechar volta a fazer.</li>
+      <li>O <code>title</code> do iframe é «Encomendar» / «Reservar mesa» (inspetor).</li>
+    </ol>
+
+    <div class="tall">(bloco alto — para conferir o bloqueio de scroll)</div>
+
+    <!-- 1.ª instância: encomendas. Exatamente o que os clientes já têm colado hoje. -->
+    <script src="http://localhost:3000/embed.js" data-slug="pizzaria-demo" defer></script>
+    <!-- 2.ª instância: reservas. Só muda o data-reservas="1". -->
+    <script
+      src="http://localhost:3000/embed.js"
+      data-slug="pizzaria-demo"
+      data-reservas="1"
+      defer
+    ></script>
+  </body>
+</html>

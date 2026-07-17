@@ -1,10 +1,22 @@
 /**
- * Menooo — widget de encomendas para o site do restaurante.
+ * Menooo — widget de encomendas e de reservas para o site do restaurante.
  * O dono cola no site dele:
  *   <script src="https://menooo.com/embed.js" data-slug="a-minha-loja" defer></script>
  * Cria um botão flutuante "Ver Menu & Encomendar" que abre a loja num popup.
+ *
+ * Reservas: o mesmo script com data-reservas="1" abre /<slug>/reservar e o botão
+ * passa a "Reservar Mesa". SEM o atributo o comportamento é o de sempre.
+ *
+ * Os DOIS podem coexistir na mesma página (o caso normal: encomendas + reservas):
+ *   <script src=".../embed.js" data-slug="a-minha-loja" defer></script>
+ *   <script src=".../embed.js" data-slug="a-minha-loja" data-reservas="1" defer></script>
+ * Para isso cada instância tem o seu namespace (window.MenoooWidget.order /
+ * .reservas), o seu gatilho (data-menooo-order / data-menooo-reservar) e os botões
+ * flutuantes empilham-se em vez de ficarem um por cima do outro.
+ *
  * Opções: data-label (texto), data-color (cor do botão), data-position
- * ("right" | "left"). Sem dependências; isolado do CSS do site.
+ * ("right" | "left"), data-button="hidden" (esconde o botão flutuante).
+ * Sem dependências; isolado do CSS do site.
  */
 (function () {
   var script = document.currentScript;
@@ -23,11 +35,44 @@
     /* usa o valor por omissão */
   }
 
-  var label = script.getAttribute('data-label') || 'Ver Menu & Encomendar';
+  // ----- modo -----
+  // Presença do atributo = reservas (data-reservas, data-reservas="1", "true"…);
+  // ausência = encomendas, o comportamento histórico. Só um "0"/"false" explícito
+  // desliga, para que data-reservas="0" gerado por um template não surpreenda.
+  var reservasAttr = script.getAttribute('data-reservas');
+  var isReservas =
+    reservasAttr !== null &&
+    ['0', 'false', 'no', 'off'].indexOf(reservasAttr.toLowerCase()) === -1;
+
+  var mode = isReservas ? 'reservas' : 'order';
+  var conf = isReservas
+    ? {
+        label: 'Reservar Mesa',
+        title: 'Reservar mesa',
+        url: base + '/' + encodeURIComponent(slug) + '/reservar',
+        trigger: '[data-menooo-reservar], a[href="#menooo-reservar"]',
+      }
+    : {
+        label: 'Ver Menu & Encomendar',
+        title: 'Encomendar',
+        url: base + '/' + encodeURIComponent(slug),
+        trigger: '[data-menooo-order], a[href="#menooo-order"]',
+      };
+
+  var label = script.getAttribute('data-label') || conf.label;
   var color = script.getAttribute('data-color') || '#E05A1E';
   var side = script.getAttribute('data-position') === 'left' ? 'left' : 'right';
-  var storeUrl = base + '/' + encodeURIComponent(slug);
+  var storeUrl = conf.url;
   var Z = 2147483000;
+
+  // ----- registo partilhado entre instâncias -----
+  // Todas as instâncias do embed.js na página partilham este objeto: é dele que
+  // sai o empilhamento dos botões e o contador do bloqueio de scroll (senão a
+  // primeira instância a fechar desbloqueava o scroll por baixo do popup da outra).
+  var W = (window.MenoooWidget = window.MenoooWidget || {});
+  if (typeof W.__n !== 'number') W.__n = 0; // total de botões flutuantes montados
+  if (!W.__stack) W.__stack = { left: 0, right: 0 }; // por lado: só empilha quem colide
+  if (typeof W.__open !== 'number') W.__open = 0; // popups abertos agora
 
   // data-button="hidden" (ou none/false/off) => não mostra o botão flutuante;
   // o dono usa o SEU botão com data-menooo-order (ex.: "Peça aqui").
@@ -44,7 +89,6 @@
   css(btn, {
     position: 'fixed',
     zIndex: Z,
-    bottom: '20px',
     background: color,
     color: '#fff',
     border: 'none',
@@ -56,9 +100,14 @@
     maxWidth: 'calc(100vw - 40px)',
   });
   btn.style[side] = '20px';
+  // 1.º botão do lado: 20px (idêntico ao de sempre); 2.º: 88px; etc.
+  var slot = showFloat ? W.__stack[side]++ : 0;
+  btn.style.bottom = 20 + slot * 68 + 'px';
+  if (showFloat) W.__n++;
 
   var overlay = null;
   var iframe = null;
+  var isOpen = false;
 
   function open() {
     if (overlay) {
@@ -92,7 +141,7 @@
 
     iframe = document.createElement('iframe');
     iframe.src = storeUrl;
-    iframe.title = 'Encomendar';
+    iframe.title = conf.title;
     iframe.setAttribute('allow', 'clipboard-write');
     css(iframe, { width: '100%', height: '100%', border: 'none', display: 'block' });
 
@@ -130,30 +179,46 @@
     lock(false);
   }
 
+  /** Bloqueio de scroll por CONTADOR partilhado: abrir duas vezes seguidas não conta
+   *  duas, e fechar um popup não desbloqueia o scroll se outro continuar aberto. */
   function lock(on) {
-    document.documentElement.style.overflow = on ? 'hidden' : '';
+    if (on === isOpen) return;
+    isOpen = on;
+    W.__open = Math.max(0, W.__open + (on ? 1 : -1));
+    document.documentElement.style.overflow = W.__open > 0 ? 'hidden' : '';
   }
 
   btn.addEventListener('click', open);
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && overlay && overlay.style.display !== 'none') close();
+    // cada instância só reage ao SEU popup: com os dois scripts na página, o Escape
+    // não pode fechar o popup do vizinho que nem sequer está aberto.
+    if (e.key === 'Escape' && isOpen) close();
   });
 
-  // API global + gatilho por atributo: qualquer botão/link do site do dono com
-  // data-menooo-order (ou href="#menooo-order") abre o popup. Também
-  // window.MenoooWidget.open() / .close().
-  window.MenoooWidget = window.MenoooWidget || {};
-  window.MenoooWidget.open = open;
-  window.MenoooWidget.close = close;
-  document.addEventListener('click', function (e) {
-    var el = e.target;
-    var trigger =
-      el && el.closest ? el.closest('[data-menooo-order], a[href="#menooo-order"]') : null;
-    if (trigger) {
-      e.preventDefault();
-      open();
-    }
-  });
+  // ----- API global + gatilho por atributo -----
+  // Namespace por modo: window.MenoooWidget.order / .reservas. A primeira instância
+  // de cada modo é a dona (uma 2.ª cópia colada do mesmo script não rouba o
+  // namespace nem duplica o listener do gatilho => nunca dois popups empilhados).
+  // .open/.close ficam como alias da PRIMEIRA instância carregada, seja de que modo
+  // for — é o contrato que os sites já colados usam hoje.
+  var owner = !W[mode];
+  if (owner) W[mode] = { open: open, close: close };
+  if (!W.open) {
+    W.open = open;
+    W.close = close;
+  }
+
+  if (owner) {
+    document.addEventListener('click', function (e) {
+      var el = e.target;
+      // filtra SÓ o gatilho deste modo: data-menooo-order não abre as reservas.
+      var trigger = el && el.closest ? el.closest(conf.trigger) : null;
+      if (trigger) {
+        e.preventDefault();
+        open();
+      }
+    });
+  }
 
   function mount() {
     document.body.appendChild(btn);
