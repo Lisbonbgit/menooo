@@ -2,7 +2,7 @@
 
 **Data:** 2026-07-17
 **Ramo:** `matheus-reservas-fase4` (a partir de `matheus-reservas-fase3`, que ainda não foi merged)
-**Estado:** design aprovado pelo utilizador; falta revisão adversarial + revisão final do utilizador
+**Estado:** design aprovado + revisão adversarial incorporada; falta revisão final do utilizador
 
 > A R1 (backend), a R2 (painel) e a R3 (loja pública) deram ao dono uma **lista** de reservas.
 > A R4 dá-lhe a **sala**: onde as mesas estão, como está a casa a cada hora, e que serviços
@@ -10,8 +10,8 @@
 
 ## 1. Objetivo
 
-A aba Reservas ganha uma vista **Mapa** ao lado da **Lista** que já existe. As duas partilham
-o dia e a hora selecionados: trocar de vista nunca perde o contexto.
+A aba Reservas ganha uma vista **Mapa** ao lado da **Lista** que já existe. As duas partilham o
+dia e a hora selecionados: trocar de vista nunca perde o contexto.
 
 O mapa não é decoração. É a vista de trabalho: **a sala, àquela hora**.
 
@@ -23,7 +23,7 @@ O mapa não é decoração. É a vista de trabalho: **a sala, àquela hora**.
 | Geometria | **Grelha com encaixe** (não tela livre com zoom/pan) |
 | Áreas | **Um mapa por área, com separadores** — encaixa no `Table.area`, que já governa o juntar mesas |
 | Lotação | **A timeline É o cursor de tempo** — uma faixa só, não um gráfico + um seletor |
-| Serviços | **Entidade com nome + dias** («Almoço, seg-sex, 12:00–14:30»), não um nome por janela |
+| Serviços | **Entidade com nome + dias**, não um nome por janela |
 | Mín/máx por mesa | **CORTADO** — ver §3 |
 | Arrastar reservas entre mesas | **Fora de âmbito** (o utilizador escolheu a opção sem isto) |
 
@@ -41,33 +41,45 @@ Provado contra o `assign.util.ts` compilado, com M2(2)/M4(4)/M8(8) e **zero** `m
 | Casal, M2 e M4 ocupadas | **M8** — último recurso |
 
 O `assignTables` faz `filter(seats >= party).sort(seats asc)` — que é, literalmente, «prefere a
-mesa mais apertada, cai na grande só se não houver outra». Um `minSeats` a funcionar como
-preferência não mudaria **uma única atribuição**: seria coluna, migração, UI e testes para zero
-diferença de comportamento.
+mesa mais apertada, cai na grande só se não houver outra». Um `minSeats`-preferência não mudaria
+uma única atribuição.
 
-Só duas variantes ganhariam o seu sustento, e ambas foram recusadas: o **mínimo duro** (recusa a
-reserva para guardar a mesa grande — perde reservas em noites vazias) e o **máximo com cadeira
-extra** (uma mesa de 4 que serve 5 — o `seats` é um número ónico e não o exprime). Se um dia o
-sistema estiver mesmo a queimar mesas grandes, volta-se a isto **com um caso real à frente**.
+*(A revisão perguntou se a prova cobre mesas JUNTAS e o canal MANUAL: cobre o que interessa —
+o par juntável é escolhido por menor desperdício (`waste = sum − partySize`), que é a mesma
+preferência; e o MANUAL só alarga o conjunto (ignora `bookableOnline`), não muda a ordenação.)*
 
-## 4. Schema (aditivo, exceto a substituição das janelas)
+## 4. Schema
+
+> ⚠️ **A forma do deploy transforma um erro de migração numa queda da PLATAFORMA.** Verificado:
+> `apps/api/docker-entrypoint.sh` corre `prisma migrate deploy` com `set -e` a **cada arranque** e
+> só faz `exec "$@"` se passar; o `docker-compose.prod.yml` dá `restart: unless-stopped` à api; e
+> **não existe um único `down.sql`** no repo (o Prisma não os gera). Uma migração que rebente põe
+> a API em crash-loop — levando **as encomendas** atrás, não só as reservas — e o Prisma marca-a
+> como falhada, recusando os `migrate deploy` seguintes até alguém entrar por SSH.
+>
+> Isto é um risco da plataforma, não da R4; a R4 é só a primeira a pisá-lo. **Fora de âmbito, mas
+> recomendado ao utilizador:** separar o `migrate` do arranque da API, para uma migração falhada
+> ser um incidente de reservas e não uma queda do negócio todo.
 
 ### 4.1 `Table` — posição no mapa
 
 ```prisma
-  x     Int?    // coluna na grelha; null = ainda não colocada (auto-layout coloca)
-  y     Int?    // linha na grelha
+  x     Int?    // coluna (0..7); null = ainda não colocada
+  y     Int?    // linha
   shape String  @default("square") // 'square' | 'round' — só leitura visual
 ```
 
-Não mexer em `seats`, `area`, `joinable`, `bookableOnline`, `sortOrder`. O `sortOrder` continua
-a ser o desempate do `assignTables` **e** a ordem do auto-layout.
+Não mexer em `seats`, `area`, `joinable`, `bookableOnline`, `sortOrder`.
 
-**Todas as mesas ocupam uma célula**, seja a M2 ou a M8. Tentador fazer o tamanho refletir os
-lugares, mas isso traz colisões e reflow a cada edição — e o que se precisa de ler no mapa é
-«qual mesa é aquela», não a escala. O nº de lugares vai na etiqueta.
+**Todas as mesas ocupam uma célula**, seja a M2 ou a M8: tamanho proporcional aos lugares traria
+colisões e reflow a cada edição, e o que se lê num mapa é «qual mesa é aquela», não a escala.
 
-### 4.2 `ReservationService` — substitui `ReservationWindow`
+**Mudar de área limpa a posição.** O `updateTable` faz `updateMany({ data: dto })` e o
+`UpdateTableDto` aceita `area` — sem isto, mover a M4 de «Sala» para «Esplanada» leva o `x,y`
+consigo e aterra em cima de uma mesa que já lá está, sem ninguém ter arrastado nada. Quando `area`
+muda, `x = null, y = null` (a posição noutra sala não quer dizer nada).
+
+### 4.2 `ReservationService` — em EXPAND, não em substituição
 
 ```prisma
 model ReservationService {
@@ -75,7 +87,7 @@ model ReservationService {
   tenantId    String
   tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name        String // "Almoço", "Jantar" — livre, é o dono que decide
-  weekdays    Int[]  // 0=domingo … 6=sábado (mesma convenção do OpeningHour)
+  weekdays    Int[]  // 0=domingo … 6=sábado (convenção do OpeningHour)
   openMinute  Int
   closeMinute Int    // o último slot COMEÇA aqui (janela de seating, não de estadia)
   sortOrder   Int    @default(0)
@@ -83,25 +95,46 @@ model ReservationService {
 }
 ```
 
-**Migração** (`reservation_services`): cria a tabela, agrupa as `ReservationWindow` existentes
-por `(openMinute, closeMinute)` dentro de cada tenant, e cria um serviço por grupo com os
-`weekdays` desse grupo. Nome derivado: `openMinute < 17*60 ? 'Almoço' : 'Jantar'`; se dois
-grupos colidirem no nome, sufixo ` 2`. Só depois dropa a `ReservationWindow`.
+**A `ReservationWindow` NÃO é dropada nesta fase.** Migração A (R4): cria a `ReservationService`,
+faz o backfill, e o código deixa de a ler. Migração B (ciclo posterior, depois de a R4 estar
+provada em produção): dropa a `ReservationWindow`. Isto dá **rollback por imagem** sem restauro de
+dump — a R3, se voltar, ainda encontra a tabela que lê em `reservations.service.ts` — e transforma
+um erro de backfill num bug de reservas em vez de uma queda da plataforma.
 
-> Em produção há poucas janelas (as reservas ainda não estão públicas e o `reservationsEnabled`
-> é `false` por omissão), mas a migração **não pode assumir isso**: tem de ser determinística e
-> correr com 0, 1 ou N janelas. `pg_dump` antes do deploy, como sempre.
+**Backfill — os três detalhes que o fazem passar em dev e rebentar em produção:**
 
-**O raio de explosão fica contido de propósito:** `windowsFor(tenant, weekday)` passa a
-`servicesFor(tenant, weekday)` e devolve **exatamente a mesma forma** —
-`{ openMinute, closeMinute }[]`. O `slotMinutes`, o `slotsForDayTx`, o `publicDays`, o
-`localDateTimeToUtc` e os testes de DST **não são tocados**. A mudança vive no painel e na
-camada que lê as janelas.
+1. **O `id` não tem default na base de dados.** O `@default(cuid())` é gerado pelo **cliente
+   Prisma**, não pelo Postgres: todos os `CREATE TABLE` do repo emitem `"id" TEXT NOT NULL` sem
+   `DEFAULT` (ex.: `20260716085451_reservations/migration.sql`), e não há `pgcrypto` em lado
+   nenhum. Um `INSERT ... SELECT` sem id explícito viola o `NOT NULL`. O único backfill do repo
+   que insere linhas já contorna isto à mão (`'pmg_' || g."id"` em `20260712120000_shared_modifier_groups`).
+   → gerar determinístico e re-executável: `'rs_' || md5("tenantId" || '_' || "openMinute" || '_' || "closeMinute")`.
+2. **Passa em dev sem tocar no problema.** O `reservationsEnabled` é `false` por omissão, logo uma
+   DB de dev fresca tem **zero** janelas: o INSERT insere 0 linhas e nada rebenta. O teste do §9
+   **tem de** correr sobre ≥1 janela e ≥2 tenants. *(É a mesma armadilha do «0 linhas não prova
+   nada» que já mordeu nesta sessão.)*
+3. **`sortOrder` tem de ser preenchido.** `@default(0)` em todos deixa a ordem dos serviços ao
+   critério do Postgres — os chips do §7 tanto saem «Almoço | Jantar» como o contrário, e mudam
+   sozinhos depois de uma edição. → `row_number() over (partition by "tenantId" order by "openMinute")`.
 
-Ficheiros afetados (levantados, não estimados): `reservations.service.ts`, `dto/panel.dto.ts`,
-`dashboard/lib/reservations-hooks.ts`, `reservation-types.ts`, `ReservationSettings.tsx`,
-`ReadinessCard.tsx` (que mostra as horas efetivas com proveniência — passa a dizer o nome do
-serviço).
+**Reconciliar antes de agrupar.** Hoje o `setWindows` só valida `close > open` e o teto de 2/dia
+— **não** verifica sobreposição — logo `seg 12:00–15:00` + `seg 14:00–18:00` é um estado legal e
+alcançável pela UI de hoje (e os slots saem certos, porque o `slotMinutes` acumula num `Set`). Um
+agrupamento ingénuo por `(open, close)` transformá-las-ia em dois serviços sobrepostos no mesmo
+weekday — que é exatamente o que a validação nova do §7 passa a recusar com 400. O dono ficava sem
+poder gravar **nada** nas Definições, nem sequer um nome. → o backfill **funde as janelas
+sobrepostas do mesmo weekday na sua união** antes de agrupar. O `Set` do `slotMinutes` garante que
+a união gera os mesmos slots: a disponibilidade não muda, que é a promessa do §9.
+
+**Nome derivado:** `openMinute < 17*60 ? 'Almoço' : 'Jantar'`, sufixado com a hora em **qualquer**
+colisão — «Almoço 10:00», «Almoço 12:00». O teto real é de 2 janelas × 7 weekdays = até 14 grupos,
+todos podendo cair do mesmo lado das 17:00; um sufixo « 2» só resolve a primeira colisão, e não há
+`@@unique` no `name` que impeça dois serviços com o mesmo nome — os chips do §7 ficariam
+indistinguíveis. A hora é auto-explicativa no dia em que o dono abre as Definições.
+
+**O raio fica contido de propósito:** `windowsFor(tenant, weekday)` passa a `servicesFor(tenant,
+weekday)` e devolve **a mesma forma** — `{ openMinute, closeMinute }[]`. O `slotMinutes`, o
+`slotsForDayTx`, o `publicDays` e os testes de DST não são tocados.
 
 ### 4.3 `Tenant` — tolerância
 
@@ -109,99 +142,163 @@ serviço).
   reservationGraceMin Int @default(15)
 ```
 
-## 5. O mapa
+## 5. O fallback do horário de abertura — a peça que o desenho anterior ignorava
 
-**Grelha com encaixe.** Cada área é uma grelha de 12 colunas; as linhas crescem conforme
-preciso. Arrastar move a mesa de célula; largar em cima de outra **troca as duas** (é o gesto
-que se espera, e evita o estado «duas mesas na mesma célula»).
+**A maioria dos tenants não tem janelas nenhumas.** O `windowsFor` cai no `OpeningHour − 60`
+quando o weekday não tem janelas, e a R3 §11 já registava que as janelas «ficaram opcionais e
+vazias por omissão». Duas consequências que o primeiro desenho não via:
 
-**Nunca vazio.** As mesas sem `x`/`y` são colocadas automaticamente em grelha por `sortOrder`,
-no cliente, e só ficam gravadas quando o dono arrasta a primeira. Um mapa vazio no primeiro
-gesto seria a pior forma de conhecer a funcionalidade.
+1. **A migração cria zero serviços para eles.** A timeline e os chips «derivados dos serviços»
+   não teriam nada para mostrar — a funcionalidade nasceria vazia para quase toda a gente.
+2. **Apagar o último serviço de um dia não fecha o dia: ABRE-O.** Sem serviços, o fallback devolve
+   `12:00–22:00` em vez de `12:00–14:30` — incluindo as 17:00 com a cozinha fechada, que é o
+   próprio problema que os serviços existem para resolver. «Apagar o Almoço» faria o oposto do que
+   o dono quer, em silêncio.
 
-**Gravar:** `PUT /tables/layout` com `{ area, positions: [{ id, x, y }] }` — em bloco e numa
-transação, porque uma troca são **duas** mesas a mudar e um estado intermédio inválido seria
-visível. Um `PATCH` por mesa não daria atomicidade à troca.
+**Decisão:** o fallback **mantém-se** (mudá-lo alteraria a disponibilidade de quem já usa isto — e
+a promessa desta migração é não mudar a disponibilidade de ninguém), mas deixa de ser invisível:
 
-**Estado de cada mesa à hora do cursor:**
+- **Serviço sintético.** Quando um dia corre pelo fallback, o painel mostra-o como um serviço de
+  leitura, chamado **«Horário de abertura»**, com a proveniência à vista: *«Sáb 12:00–22:00 — vem
+  do teu horário de abertura, não de um serviço»* + CTA «Criar serviços». O `ReadinessCard` da R3
+  já diz isto; agora a timeline e o mapa funcionam por cima dele, e ninguém fica com um ecrã vazio.
+- **Apagar avisa com a consequência real.** Ao apagar o último serviço de um weekday: *«Sem
+  serviços à segunda, as reservas passam a seguir o teu horário de abertura: 12:00–22:00, incluindo
+  as 17:00. Queres antes bloquear o dia?»* — com atalho para o bloqueio de dia, que já existe.
 
-| Estado | Aspeto |
-|---|---|
-| Livre | contorno, nome + lugares |
-| Reservada | cor da loja, primeiro nome do cliente + nº de pessoas |
-| Juntas | as duas mesas da mesma reserva, ligadas visualmente |
+## 6. O mapa
 
-CANCELLED / COMPLETED / NO_SHOW **não ocupam** — o slot volta, como já acontece hoje.
+**Geometria — a conta que decide tudo.** O `<main>` do `AppShell` tem `px-4` e nenhum wrapper de
+largura máxima: a 375px sobram **343px**. Doze colunas dariam células de **23px**, metade do mínimo
+tátil (44px HIG / 48dp Material), com o nome da mesa, os lugares e o nome do cliente lá dentro.
 
-**Tocar numa mesa livre** abre o modal de reserva manual **já preenchido** com aquela mesa e
-aquela hora (a R2 já suporta mesa forçada). É o que transforma o mapa em ferramenta em vez de
-poster. Tocar numa mesa reservada abre a reserva.
+→ **Grelha fixa de 8 colunas × células de 56px** (canvas ≈ 504px), com **scroll horizontal dentro
+do próprio cartão do mapa** em ecrãs estreitos. Não é zoom nem pan — é uma barra de scroll, e o
+`x` continua a querer dizer a mesma coisa em todos os ecrãs. Um número de colunas que mudasse com
+o ecrã tornaria o `x` gravado ambíguo: a mesma mesa em sítios diferentes conforme o telemóvel.
 
-**Só o dono vê o mapa.** O cliente nunca; nada disto entra no contrato público. *(Decisão
-original do utilizador: «o cliente não precisa de saber isso».)*
+**Nunca vazio.** As mesas sem `x`/`y` são colocadas por auto-layout (em grelha, por `sortOrder`).
+O estado misto — umas com posição, outras sem — é o **normal**, não a exceção: qualquer mesa criada
+depois de o mapa estar arrumado nasce com `x=null`. O auto-layout coloca as órfãs nas **primeiras
+células livres**, nunca por cima de uma mesa já posicionada.
 
-## 6. A timeline-cursor
+**Gravar: o PUT leva a área INTEIRA.** `PUT /tables/layout` com
+`{ area, positions: [{ id, x, y }] }` para **todas** as mesas daquela área — não só as que se
+mexeram. Se levasse só as duas da troca, o auto-layout das restantes nunca ficaria gravado e o
+mapa recalcular-se-ia a cada abertura; e dois dispositivos veriam salas diferentes até alguém
+arrastar. Uma transação: uma troca são duas mesas a mudar, e o estado intermédio seria visível.
+
+**Papel e tenancy explícitos:** `@Roles(UserRole.OWNER, UserRole.STAFF)`. O `RolesGuard` **falha
+ABERTO** (`if (!required || required.length === 0) return true`), logo esquecer o decorador dá
+acesso a qualquer utilizador autenticado — **incluindo o tablet da cozinha**. Tenancy pelo
+`@TenantId()`, com 404 para mesas de outro tenant.
+
+**Estado de cada mesa à hora do cursor T:**
+
+| Estado | Significado | Aspeto |
+|---|---|---|
+| **Livre** | livre em T **e** reservável para uma estadia inteira | contorno; toque abre o modal |
+| **Livre até HH:MM** | livre em T, mas a próxima reserva não deixa caber a estadia | contorno esbatido + hora; toque explica |
+| **Reservada** | ocupada em T | cor da loja, primeiro nome + nº de pessoas |
+| **Juntas** | as duas mesas da mesma reserva | ligadas visualmente |
+| **Inativa** | `active: false` | tracejado, fora da timeline |
+
+> **Porquê o «Livre até».** O primeiro desenho dizia só «Livre / Reservada», e mentia. «Livre» no
+> mapa era ocupação **no instante** T; o servidor decide por **intervalo** `[T, T+duração+buffer)`.
+> Com os defaults (`duração=120`, slots de 30) divergem em 4 slots: a M4 com reserva às 20:00 está
+> mesmo livre às 18:30, o mapa mostrava-a livre, o dono tocava — e o backend recusava, porque
+> 18:30+120 = 20:30 atropela as 20:00. O mapa oferecia uma reserva impossível.
+> O cliente passa a derivar o estado com a **mesma regra do servidor** (`occupiedAt(busy, T,
+> T+durMs, bufMs)`, a config já vem no `useTenantConfig`). Bónus: isto entrega o follow-up «livre
+> até HH:MM» que a R2 tinha deixado por fazer.
+
+**Mesas inativas.** O `listTables` devolve **todas** as mesas, ativas ou não (de propósito: é o
+TablesManager que as mostra esbatidas). Sem um estado próprio, uma mesa desativada apareceria
+«Livre» no mapa e **falsearia o denominador da timeline**.
+
+**Tocar numa mesa livre** abre o modal de reserva manual pré-preenchido com aquela mesa e aquela
+hora. **Isto exige mudar o contrato do modal:** o `ReservationFormModal` aceita hoje só
+`{ mode, reservation, onClose }` e, em `mode:'create'`, fixa `date = todayISO()`,
+`time = nowHHMM()`, `tableIds = []`. Passa a aceitar `initial?: { date, time, tableIds }`. *(O §5
+do primeiro desenho dizia «a R2 já suporta mesa forçada» — verdade sobre a UI interna do
+formulário, falso sobre a integração.)*
+
+**Só o dono vê o mapa.** `x`, `y` e `shape` **não** entram no contrato público: o `getPublicBySlug`
+não devolve mesas, e o `publicByCode`/`publicView` só expõem `tableNames` (que a R3 já decidiu não
+renderizar). *(Decisão original: «o cliente não precisa de saber isso».)*
+
+## 7. A timeline-cursor
 
 Faixa horizontal por cima do mapa, com os slots do serviço selecionado:
 
-- **Altura da barra** = % de mesas ocupadas naquele slot (na área visível).
+- **Altura da barra** = % de mesas **ativas** ocupadas naquele slot, na área visível.
 - **Número** = pessoas sentadas naquele slot.
-- **Tocar/arrastar** move o cursor de tempo; o mapa por baixo salta para aquela hora.
-- **Por omissão** aponta para *agora*, se for hoje e dentro do serviço; senão, para o início do
-  serviço.
+- **Tocar/arrastar** move o cursor; o mapa por baixo salta para aquela hora.
+- **Por omissão** aponta para *agora*, se for hoje e dentro do serviço; senão, para o início.
 
-Responde a duas perguntas com um só controlo: «quando é que a noite aperta?» e «e nessa hora,
-como está a sala?». Um gráfico à parte mais um seletor de hora seriam dois sítios a dizer o
-mesmo.
+Um serviço de 12:00–14:30 tem 6 slots; um de 19:00–22:00 tem 7. Cabem em 343px (≈49px cada) —
+mas um serviço contínuo de 12:00–23:00 tem 23 slots, logo a faixa **scrolla horizontalmente** e o
+slot do cursor é trazido à vista.
 
-**Cálculo no cliente:** as reservas do dia já vêm todas (a R2 carrega-as e o socket mantém-nas
-vivas). A ocupação por slot é derivada em memória — zero endpoints novos, e a timeline mexe-se
-ao vivo quando entra uma reserva.
+**Ocupação no cliente**, das reservas do dia que a R2 já carrega e o socket mantém vivas — zero
+endpoints novos, e a timeline mexe-se ao vivo quando entra uma reserva. Contam as reservas que
+**intersetam** o slot, não as que começam nele: uma reserva de 20:00–22:00 conta às 20:00, 20:30,
+21:00 e 21:30. Uma reserva que começou às 18:00 e ainda lá está às 19:00 conta no slot das 19:00 —
+o cálculo é por interseção de intervalos, não por hora de início.
 
-## 7. Serviços — CRUD e navegação
+## 8. Serviços — CRUD e navegação
 
-Nas Definições de reservas: criar/editar/apagar serviço (nome, chips dos dias, abre, fecha).
+Nas Definições de reservas: criar/editar/apagar (nome, chips dos dias, abre, fecha).
 
-**Validação:** dois serviços do mesmo tenant que partilhem um weekday **não podem sobrepor-se**
-no tempo — senão os slots duplicavam e a grelha de horas mentia. 400 com mensagem clara.
-Mantém-se a regra de o `closeMinute` não passar das 23:00 (já existe).
+**Validação:** dois serviços que partilhem um weekday não podem sobrepor-se no tempo → 400 com
+mensagem clara. Mantém-se o teto das 23:00. *(A validação é nova; o backfill do §4.2 tem de
+produzir um estado que a passe — ver «Reconciliar antes de agrupar».)*
 
-**Navegação:** na aba Reservas, chips com os serviços do dia selecionado («Almoço | Jantar»),
-derivados dos serviços — não escritos à mão. Se o dia só tem um serviço, não há chips (não se
-navega para lado nenhum).
+**Navegação:** chips com os serviços do dia selecionado, derivados dos serviços — ou o serviço
+sintético «Horário de abertura» do §5. Se o dia só tem um, não há chips.
 
-## 8. Tolerância de atraso
+**Apagar** avisa com a consequência real (§5).
+
+## 9. Tolerância de atraso
 
 `reservationGraceMin` (default 15) **só comunica**:
-- Ecrã de confirmação e email: «A tua mesa fica guardada 15 minutos.» — substitui o texto fixo
-  que a R3 pôs.
+- Confirmação e email: «A tua mesa fica guardada 15 minutos» — substitui o texto fixo da R3.
 - Painel: mostrado na reserva.
 
-**Não marca falta sozinho.** Um automatismo aqui libertaria a mesa de quem está a estacionar, e
-o NO_SHOW é um juízo do dono — que já tem o botão. Também **não afeta a atribuição**: a reserva
-já bloqueia a mesa por `reservationDurationMin`; a tolerância é expectativa, não capacidade.
+**Não marca falta sozinho** (libertaria a mesa de quem está a estacionar; o NO_SHOW é juízo do
+dono, que já tem o botão) e **não afeta a atribuição** (a mesa já está bloqueada por
+`reservationDurationMin`; a tolerância é expectativa, não capacidade).
 
-## 9. Testes
+## 10. Testes
 
-- **Unit:** `services.util` (`servicesFor` ≡ o antigo `windowsFor` para os mesmos dados);
-  auto-layout (N mesas → N células distintas, ordem = `sortOrder`); troca de posições
-  (swap é simétrico e não perde mesas); ocupação por slot (uma reserva de 20:00–22:00 conta
-  nos slots 20:00, 20:30, 21:00, 21:30 e não no das 19:30).
-- **Migração:** teste que corre o backfill sobre janelas de exemplo e prova que os serviços
-  resultantes geram **os mesmos slots** que as janelas geravam. É o único teste que interessa
-  aqui: a migração não pode mudar a disponibilidade de ninguém.
-- **E2e:** CRUD de serviços; sobreposição no mesmo weekday → 400; `PUT /tables/layout` grava e
-  a troca é atómica; layout de outro tenant → 404 (tenancy).
-- **Browser (obrigatório, não delegável):** arrastar uma mesa e ver a posição sobreviver ao F5;
-  scrub da timeline a mover o mapa; mesa livre → modal pré-preenchido; separadores de área.
-- **Regressões:** e2e-reservas (124), e2e-kitchen (42), unit (78), e a loja pública intacta.
+- **Unit:** `servicesFor` ≡ `windowsFor` para os mesmos dados, **incluindo o fallback**;
+  auto-layout com estado misto (mesas posicionadas + órfãs → as órfãs vão para células livres,
+  nunca por cima); troca simétrica e sem perder mesas; ocupação por slot **por interseção**
+  (reserva 20:00–22:00 conta em 4 slots, não no de 19:30; reserva que atravessa o início do
+  serviço conta); estado «Livre até» com `duração=120` e reserva às 20:00 → às 18:30 **não** é
+  «Livre».
+- **Migração (o teste que interessa):** correr o backfill sobre janelas de exemplo — **≥1 janela,
+  ≥2 tenants, e um par sobreposto no mesmo weekday** — e provar que (a) os serviços resultantes
+  geram **exatamente os mesmos slots** que as janelas geravam, e (b) o resultado **passa na
+  validação nova** do §8. Um teste com 0 janelas passa sem tocar em nada.
+- **E2e:** CRUD de serviços; sobreposição → 400; apagar o último serviço avisa; `PUT
+  /tables/layout` grava a área inteira e a troca é atómica; layout de outro tenant → 404; **o
+  tablet de cozinha (KITCHEN) não chega ao layout** (o RolesGuard falha aberto — este teste é o
+  que prova o decorador).
+- **Browser (obrigatório, não delegável):** arrastar uma mesa e a posição sobreviver ao F5; scrub
+  da timeline a mover o mapa; mesa livre → modal pré-preenchido com a mesa e a hora certas; mesa
+  «Livre até» → explica em vez de oferecer; separadores de área; mudar a área de uma mesa no
+  TablesManager e ela não aterrar em cima de outra.
+- **Regressões:** e2e-reservas (124), e2e-kitchen (42), unit (78), loja pública intacta.
 
-## 10. Fora de âmbito
+## 11. Fora de âmbito
 
-**Nesta fase:** arrastar reservas entre mesas · paredes e objetos · rotação · zoom/pan ·
-tamanho da mesa proporcional aos lugares · mín/máx por mesa (§3).
-**Trabalho à parte:** horário repartido do Roma — **a R4 resolve-o de facto** (dois serviços
-com nome fazem exatamente isso), mas o `OpeningHour` continua com `@@unique([tenantId, weekday])`
-e o `computeOpenNow` da montra continua a achar que o restaurante está aberto às 17:00. Isso é
-das **encomendas**, não das reservas, e fica para o seu próprio ciclo.
-**v2:** lista de espera · walk-ins no mapa · estados de mesa em tempo real (sentados/a pagar).
+**Nesta fase:** arrastar reservas entre mesas · paredes e objetos · rotação · zoom/pan · tamanho
+proporcional aos lugares · mín/máx (§3) · o DROP da `ReservationWindow` (§4.2, migração B).
+**Recomendado ao utilizador, fora deste spec:** separar o `prisma migrate deploy` do arranque da
+API (§4) — hoje uma migração falhada derruba o negócio todo, não só as reservas.
+**Trabalho à parte:** o horário repartido do Roma fica resolvido **nas reservas** (dois serviços
+com nome fazem exatamente isso), mas **não na montra**: o `OpeningHour` continua com
+`@@unique([tenantId, weekday])` e o `computeOpenNow` continua a dizer que o restaurante está
+aberto às 17:00. Isso é das **encomendas** e tem o seu próprio ciclo.
+**v2:** lista de espera · walk-ins no mapa · estados em tempo real (sentados/a pagar).
