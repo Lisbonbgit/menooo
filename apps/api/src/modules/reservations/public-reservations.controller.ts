@@ -10,11 +10,25 @@ import { Public } from '../../common/decorators/public.decorator';
 export class PublicReservationsController {
   constructor(private readonly reservations: ReservationsService) {}
 
-  /** Slots disponíveis de um dia (throttle global). */
+  /** Slots de um dia — throttle dedicado: é o passo de reconhecimento e um amplificador de queries. */
   @Public()
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @Get('stores/:slug/reservation-slots')
   slots(@Param('slug') slug: string, @Query('date') date: string, @Query('party') party: string) {
     return this.reservations.publicSlots(slug, date, Number(party));
+  }
+
+  /** Disponibilidade de um intervalo — 1 pedido em vez de 30 (ver spec §4). */
+  @Public()
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @Get('stores/:slug/reservation-days')
+  days(
+    @Param('slug') slug: string,
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @Query('party') party: string,
+  ) {
+    return this.reservations.publicDays(slug, from, to, Number(party));
   }
 
   /** Cria a reserva a partir da loja pública (auto-confirma; throttle dedicado). */

@@ -16,6 +16,7 @@ import { isSubscriptionUsable } from '../tenants/subscription.util';
 import { localDateISO, localDateTimeToUtc, minutesOfDayInTz, weekdayOf } from './time.util';
 import { slotMinutes } from './slots.util';
 import { assignTables } from './assign.util';
+import { dayHasSlot, occupiedAt } from './days.util';
 import { CreatePublicReservationDto } from './dto/public-reservation.dto';
 import {
   CreateBlockDto,
@@ -114,6 +115,70 @@ export class ReservationsService {
     return { ...result, slots: result.slots.map((s) => s.label) };
   }
 
+  /** Disponibilidade de um INTERVALO (1 query de reservas + 1 de mesas para tudo). */
+  async publicDays(slug: string, fromISO: string, toISO: string, party: number) {
+    const okISO = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s ?? '') && isRealDateISO(s);
+    if (!okISO(fromISO) || !okISO(toISO) || !Number.isInteger(party) || party < 1 || party > 50) {
+      throw new BadRequestException('Parâmetros inválidos.');
+    }
+    const spanDays = Math.round((Date.parse(toISO) - Date.parse(fromISO)) / 86_400_000);
+    if (spanDays < 0 || spanDays > 62) throw new BadRequestException('Intervalo inválido.');
+
+    const tenant = await this.gatedTenant(slug);
+    const tz = tenant.timezone || 'Europe/Lisbon';
+    if (party > tenant.reservationMaxPartySize) {
+      return { days: [], reason: 'party', contactPhone: tenant.phone };
+    }
+
+    const dates: string[] = [];
+    for (let i = 0; i <= spanDays; i++) {
+      dates.push(localDateISO(new Date(Date.parse(fromISO) + i * 86_400_000), 'UTC'));
+    }
+
+    const rangeStart = localDateTimeToUtc(dates[0], 0, tz);
+    const rangeEnd = new Date(localDateTimeToUtc(dates[dates.length - 1], 0, tz).getTime() + 36 * 3_600_000);
+    const bufMs = tenant.reservationBufferMin * 60_000;
+    const durMs = tenant.reservationDurationMin * 60_000;
+    const notBefore = Date.now() + tenant.reservationMinNoticeMin * 60_000;
+
+    const [busy, tables, blocks] = await Promise.all([
+      this.prisma.reservation.findMany({
+        where: {
+          tenantId: tenant.id,
+          status: 'CONFIRMED',
+          startsAt: { lt: new Date(rangeEnd.getTime() + bufMs) },
+          endsAt: { gt: new Date(rangeStart.getTime() - bufMs) },
+        },
+        include: { tables: true },
+      }),
+      this.prisma.table.findMany({ where: { tenantId: tenant.id, active: true } }),
+      this.prisma.reservationBlock.findMany({
+        where: { tenantId: tenant.id, date: { in: dates } },
+      }),
+    ]);
+    const blocked = new Set(blocks.map((b) => b.date));
+    const todayISO = localDateISO(new Date(), tz);
+
+    const days = dates.map((date) => {
+      const diffDays = Math.round((Date.parse(date) - Date.parse(todayISO)) / 86_400_000);
+      if (blocked.has(date) || diffDays < 0 || diffDays > tenant.reservationMaxAdvanceDays) {
+        return { date, hasSlots: false };
+      }
+      const minutesList = slotMinutes(this.windowsFor(tenant, weekdayOf(date)));
+      if (minutesList.length === 0) return { date, hasSlots: false };
+      const seen = new Set<number>();
+      const starts: Date[] = [];
+      for (const m of minutesList) {
+        const start = localDateTimeToUtc(date, m, tz);
+        if (seen.has(start.getTime())) continue; // dedup DST
+        seen.add(start.getTime());
+        starts.push(start);
+      }
+      return { date, hasSlots: dayHasSlot(starts, busy, tables, party, durMs, bufMs, notBefore) };
+    });
+    return { days };
+  }
+
   /** Variante fora de transação — delega em slotsForDayTx com this.prisma. */
   private async slotsForDay(
     tenant: TenantWithHours,
@@ -174,12 +239,8 @@ export class ReservationsService {
       seen.add(start.getTime());
       if (start.getTime() < notBefore) continue;
       const end = new Date(start.getTime() + durMs);
-      const occupied = new Set<string>();
-      for (const r of busy) {
-        if (r.startsAt.getTime() < end.getTime() + bufMs && r.endsAt.getTime() + bufMs > start.getTime()) {
-          for (const rt of r.tables) occupied.add(rt.tableId);
-        }
-      }
+      // mesma função do lote (publicDays) — se as regras divergirem, o lote mente ao cliente
+      const occupied = occupiedAt(busy, start, end, bufMs);
       if (assignTables(tables, occupied, party, channel)) {
         slots.push({ label: hhmm(m), start });
       }
@@ -413,6 +474,7 @@ export class ReservationsService {
       partySize: row.partySize,
       tableNames: row.tables.map((rt) => rt.table.name),
       restaurantName: row.tenant.name,
+      restaurantPhone: row.tenant.phone,
     };
   }
 
