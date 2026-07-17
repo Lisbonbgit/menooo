@@ -9,6 +9,8 @@ import { OrdersModule } from '../orders/orders.module';
   imports: [OrdersModule],
   controllers: [PublicReservationsController, ReservationsController],
   providers: [ReservationsService, TurnstileService],
-  exports: [ReservationsService],
+  // TurnstileService exportado (e não re-provido no HealthModule): tem estado — o
+  // `consecutiveFailures` do fail-open — e uma 2ª instância reportava 0 para sempre.
+  exports: [ReservationsService, TurnstileService],
 })
 export class ReservationsModule {}

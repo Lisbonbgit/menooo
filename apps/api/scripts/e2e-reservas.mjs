@@ -17,7 +17,8 @@
  *   de forma determinística sem gastar o throttle público de 5/min).
  * - O throttle público (5/min por IP em POST /public/.../reservations) é gerido
  *   com pacing (sleeps ~13s entre grupos de até 5 POSTs) + retry único em caso de
- *   429 que NÃO seja do cap por contacto (distinguido pela mensagem).
+ *   429. Desde a R3 o cap por contacto é 409 (CONTACT_CAP), logo TODO o 429 é do
+ *   throttle — já não é preciso distingui-los pela mensagem.
  * - Limpeza final: a API não expõe "apagar reserva" (só mudar estado) e
  *   DELETE /tables/:id recusa mesas com histórico — por isso a limpeza de
  *   reservas/mesas/janelas/blocos usa o Prisma diretamente (única exceção ao
@@ -122,12 +123,12 @@ function contact(prefix) {
 }
 
 // throttle público: 5/min por IP em POST /public/stores/:slug/reservations — retry
-// único com sleep de 61s se apanharmos 429 do THROTTLE (não do cap por contacto).
+// único com sleep de 61s. Desde a R3 o cap por contacto é 409, logo todo o 429 é throttle.
 async function publicPost(date, time, partySize, extra, contactPrefix) {
   const body = { date, time, partySize, customerName: 'Cliente Teste', ...contact(contactPrefix), ...extra };
   let res = await req('POST', `/public/stores/${SLUG}/reservations`, { body });
-  if (res.status === 429 && !/reservas ativas/i.test(res.json?.message ?? '')) {
-    console.log('    … 429 de throttle (não de cap) — sleep 61s e retry único');
+  if (res.status === 429) {
+    console.log('    … 429 de throttle — sleep 61s e retry único');
     await sleep(61_000);
     res = await req('POST', `/public/stores/${SLUG}/reservations`, { body });
   }
@@ -213,7 +214,6 @@ async function main() {
     const cfg = await req('PATCH', '/tenants/me', {
       token: ownerToken,
       body: {
-        reservationsEnabled: true,
         reservationDurationMin: 120,
         reservationMinNoticeMin: 0,
         reservationBufferMin: 0,
@@ -223,7 +223,23 @@ async function main() {
       },
     });
     check('PATCH /tenants/me 200', cfg.status === 200, `got ${cfg.status} ${JSON.stringify(cfg.json)}`);
-    check('reservationsEnabled true', cfg.json?.reservationsEnabled === true);
+
+    // A guarda de prontidão (R3) recusa ligar reservas com 0 mesas reserváveis — e o ponto 2
+    // precisa exatamente do estado que ela proíbe (reservas ligadas, 0 mesas). Prova-se a
+    // recusa por HTTP e liga-se o interruptor por prisma direto (a mesma exceção documentada
+    // no cabeçalho para a limpeza). As mesas só nascem no ponto 3.
+    const enableNoTables = await req('PATCH', '/tenants/me', {
+      token: ownerToken,
+      body: { reservationsEnabled: true },
+    });
+    check(
+      'ligar reservas sem mesas reserváveis → 400',
+      enableNoTables.status === 400,
+      `got ${enableNoTables.status} ${JSON.stringify(enableNoTables.json)}`,
+    );
+    await prisma.tenant.update({ where: { id: tenantId }, data: { reservationsEnabled: true } });
+    const afterEnable = await req('GET', '/tenants/me', { token: ownerToken });
+    check('reservationsEnabled true', afterEnable.json?.reservationsEnabled === true, JSON.stringify(afterEnable.json?.reservationsEnabled));
 
     // =========================================================================
     // 2. Slots ANTES de mesas → lista vazia
@@ -366,9 +382,9 @@ async function main() {
     await sleep(13_000);
 
     // =========================================================================
-    // 12. Cap por contacto: 3ª reserva futura com o mesmo email/telefone → 429
+    // 12. Cap por contacto NORMALIZADO: 4ª reserva futura → 409 CONTACT_CAP
     // =========================================================================
-    console.log('— 12. cap por contacto (2 ok, 3ª → 429)');
+    console.log('— 12. cap por contacto normalizado (3 ok, 4ª → 409 CONTACT_CAP)');
     // pré-ocupa M4+M8 em DATE_E para que o "slot reappears" do ponto 14 seja nítido
     const preE = await manualBook(ownerToken, { date: DATE_E, time: '12:00', partySize: 10, tableIds: [m4Id, m8Id], customerName: 'Bloqueio Cap' });
     check('pré-bloqueio M4+M8 em DATE_E (manual) 201', preE.status === 201, `got ${preE.status}`);
@@ -377,8 +393,21 @@ async function main() {
     check('1ª reserva do contacto → 201', g1.status === 201, `got ${g1.status} ${JSON.stringify(g1.json)}`);
     const g2 = await publicPost(DATE_E, '12:00', 2, capContact, 'capB');
     check('2ª reserva do contacto → 201', g2.status === 201, `got ${g2.status} ${JSON.stringify(g2.json)}`);
-    const g3 = await publicPost(DATE_E, '12:00', 2, capContact, 'capC');
-    check('3ª reserva do contacto → 429', g3.status === 429, `got ${g3.status} ${JSON.stringify(g3.json)}`);
+    // 3ª com o MESMO contacto escrito de outra forma (email em maiúsculas, telefone com
+    // indicativo e espaços): se a normalização não funcionar, isto conta como um contacto
+    // NOVO e a 4ª passa a 201 — este 201 é que arma o 409 seguinte. Vai às 14:00 porque às
+    // 12:00 M2+M2b já estão cheias (o ponto 14 depende disso) e às 14:00 as mesas do
+    // pré-bloqueio (12:00–14:00, duração 120) já estão livres.
+    const capContactVariant = {
+      customerEmail: capContact.customerEmail.toUpperCase(),
+      customerPhone: `+351 ${capContact.customerPhone}`,
+    };
+    const g3 = await publicPost(DATE_E, '14:00', 2, capContactVariant, 'capC');
+    check('3ª reserva do contacto (email/telefone noutro formato) → 201', g3.status === 201, `got ${g3.status} ${JSON.stringify(g3.json)}`);
+    const g4 = await publicPost(DATE_E, '14:00', 2, capContact, 'capD');
+    check('4ª reserva do contacto → 409 (e NÃO 429: o 429 é exclusivo do throttle)', g4.status === 409, `got ${g4.status} ${JSON.stringify(g4.json)}`);
+    check("4ª traz code 'CONTACT_CAP'", g4.json?.code === 'CONTACT_CAP', JSON.stringify(g4.json));
+    check('4ª traz contactPhone do restaurante', 'contactPhone' in (g4.json ?? {}), JSON.stringify(g4.json));
 
     // =========================================================================
     // 13. GET público por code: sem token → 404; token errado → 404; certo → 200

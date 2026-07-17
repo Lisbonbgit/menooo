@@ -17,6 +17,8 @@ import { localDateISO, localDateTimeToUtc, minutesOfDayInTz, weekdayOf } from '.
 import { slotMinutes } from './slots.util';
 import { assignTables } from './assign.util';
 import { dayHasSlot, occupiedAt } from './days.util';
+import { emailKey, phoneKey } from './contact.util';
+import { TurnstileService } from './turnstile.service';
 import { CreatePublicReservationDto } from './dto/public-reservation.dto';
 import {
   CreateBlockDto,
@@ -74,6 +76,7 @@ export class ReservationsService {
     private readonly prisma: PrismaService,
     private readonly gateway: OrdersGateway,
     private readonly mail: MailService,
+    private readonly turnstile: TurnstileService,
   ) {}
 
   // ==========================================================================
@@ -350,7 +353,9 @@ export class ReservationsService {
     return h * 60 + mi;
   }
 
-  async createPublic(slug: string, dto: CreatePublicReservationDto) {
+  async createPublic(slug: string, dto: CreatePublicReservationDto, remoteIp?: string) {
+    // PRIMEIRA linha, antes de qualquer query: não se gasta DB em pedidos que vão ser recusados.
+    await this.turnstile.verify(dto.turnstileToken, remoteIp);
     if (!isRealDateISO(dto.date)) throw new BadRequestException('Data inválida.');
     const tenant = await this.gatedTenant(slug);
     const tz = tenant.timezone || 'Europe/Lisbon';
@@ -377,25 +382,46 @@ export class ReservationsService {
         // (limitação conhecida do driver do Prisma) — $executeRaw não lê colunas.
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${tenant.id}))`;
 
-        // cap anti-spam: máx. 2 reservas futuras confirmadas por contacto (dentro do lock)
-        const activeByContact = await tx.reservation.count({
-          where: {
-            tenantId: tenant.id,
-            status: 'CONFIRMED',
-            startsAt: { gt: new Date() },
-            OR: [{ customerEmail: dto.customerEmail }, { customerPhone: dto.customerPhone }],
-          },
-        });
-        if (activeByContact >= 2) {
-          throw new HttpException('Já tens reservas ativas neste restaurante. Contacta-o diretamente.', 429);
+        // Cap anti-spam por contacto NORMALIZADO (dentro do lock): `Ana@x.pt` e `ana@x.pt `
+        // são a MESMA caixa, `+351 912 345 678` e `912345678` o MESMO telefone. 409 e não 429:
+        // o 429 fica exclusivo do throttle, senão o cliente não distingue os dois — e o
+        // ThrottlerException sai em inglês. 3 e não 2: a 2 apanhava o casal que partilha
+        // telefone e quem marca sexta+domingo (o cliente fiel).
+        const eKey = emailKey(dto.customerEmail);
+        const pKey = phoneKey(dto.customerPhone);
+        const contactOr: Prisma.ReservationWhereInput[] = [];
+        if (eKey) contactOr.push({ contactEmailKey: eKey });
+        if (pKey) contactOr.push({ contactPhoneKey: pKey });
+        if (contactOr.length > 0) {
+          const activeByContact = await tx.reservation.count({
+            where: { tenantId: tenant.id, status: 'CONFIRMED', startsAt: { gt: new Date() }, OR: contactOr },
+          });
+          if (activeByContact >= 3) {
+            throw new ConflictException({
+              message: 'Já tens reservas ativas neste restaurante. Liga-nos para marcar mais.',
+              code: 'CONTACT_CAP',
+              contactPhone: tenant.phone,
+            });
+          }
         }
 
         // revalida o pipeline COMPLETO dentro do lock — comparação pelo INSTANTE, não pelo label
         const { slots } = await this.slotsForDayTx(tx, tenant, dto.date, dto.partySize, 'ONLINE');
         if (!slots.some((s) => s.start.getTime() === wanted.getTime())) {
+          // Alternativas por PROXIMIDADE da hora pedida: `slice(0, 4)` cru dava os 4 primeiros
+          // do dia e quem tenta 21:00 recebia «12:00 · 12:30 · 13:00» — lê-se como avaria.
+          const near = slots
+            .slice()
+            .sort(
+              (a, b) =>
+                Math.abs(a.start.getTime() - wanted.getTime()) -
+                Math.abs(b.start.getTime() - wanted.getTime()),
+            )
+            .slice(0, 4)
+            .sort((a, b) => a.start.getTime() - b.start.getTime()); // cronológico só para exibir
           throw new ConflictException({
             message: 'Esse horário acabou de ficar ocupado.',
-            alternatives: slots.slice(0, 4).map((s) => s.label),
+            alternatives: near.map((s) => s.label),
           });
         }
         const start = wanted;
@@ -412,6 +438,8 @@ export class ReservationsService {
           customerName: dto.customerName,
           customerPhone: dto.customerPhone,
           customerEmail: dto.customerEmail,
+          contactEmailKey: eKey,
+          contactPhoneKey: pKey,
           notes: dto.notes ?? null,
           marketingConsent: dto.marketingConsent ?? false,
           tables: { create: tableIds.map((id) => ({ tableId: id })) },
@@ -463,6 +491,13 @@ export class ReservationsService {
       include: { tables: { include: { table: true } }, tenant: true },
     });
     if (!row || !this.verifyToken(row, token)) throw new NotFoundException('Reserva não encontrada.');
+    // O token expira por TEMPO e não por estado: quem clica no link logo após cancelar
+    // continua a ver "reserva cancelada" em vez de um 404 confuso. Sem isto o cancelToken é
+    // uma credencial bearer ETERNA — cada fuga (email reencaminhado, screenshot, histórico
+    // sincronizado, quiosque) passava de janela a permanente.
+    if (row.startsAt.getTime() + 24 * 3_600_000 < Date.now()) {
+      throw new NotFoundException('Reserva não encontrada.');
+    }
     const tz = row.tenant.timezone || 'Europe/Lisbon';
     return {
       code: row.code,
@@ -484,7 +519,14 @@ export class ReservationsService {
       include: { tables: { include: { table: true } }, tenant: true },
     });
     if (!row || !this.verifyToken(row, token)) throw new NotFoundException('Reserva não encontrada.');
-    if (row.status !== ReservationStatus.CONFIRMED || row.startsAt.getTime() <= Date.now()) {
+    // Mesmo TTL do publicByCode — o token não é uma credencial eterna.
+    if (row.startsAt.getTime() + 24 * 3_600_000 < Date.now()) {
+      throw new NotFoundException('Reserva não encontrada.');
+    }
+    // Até `endsAt` e não `startsAt`: um cancelamento tardio é sempre melhor para o dono que um
+    // no-show mudo. Antes, quem se atrasava 10 min e queria avisar levava um erro seco e a mesa
+    // ficava bloqueada os 120 min até alguém marcar NO_SHOW à mão.
+    if (row.status !== ReservationStatus.CONFIRMED || row.endsAt.getTime() <= Date.now()) {
       throw new BadRequestException('Esta reserva já não pode ser cancelada.');
     }
     // guarda atómica: só cancela se ainda estiver CONFIRMED (evita corrida com o painel)
@@ -694,6 +736,10 @@ export class ReservationsService {
           customerName: dto.customerName,
           customerPhone: dto.customerPhone ?? '',
           customerEmail: dto.customerEmail ?? null,
+          // Uma reserva manual sem keys não contaria para o cap: quem liga a marcar 3× e
+          // depois marca online passaria a ter 6 reservas ativas em vez de 3.
+          contactEmailKey: emailKey(dto.customerEmail),
+          contactPhoneKey: phoneKey(dto.customerPhone),
           notes: dto.notes ?? null,
           tables: { create: tableIds.map((tableId) => ({ tableId })) },
         });
@@ -703,6 +749,28 @@ export class ReservationsService {
 
     this.gateway.emitReservationCreated(tenantId, this.publicRow(row));
     return this.publicRow(row);
+  }
+
+  /**
+   * Contactos resolvidos de uma edição + as keys do cap em LOCKSTEP com eles: a key tem de
+   * derivar do valor GRAVADO e não do dto — senão editar o telefone deixa lá a key antiga e o
+   * cap continua a contar o contacto que já não existe. `undefined` mantém o antigo (o
+   * `JSON.stringify` deita a chave fora); null LIMPA (daí o `?? ''` / `?? null`).
+   */
+  private contactFieldsFor(
+    dto: UpdateReservationDto,
+    existing: Pick<Reservation, 'customerPhone' | 'customerEmail'>,
+  ) {
+    const customerPhone =
+      dto.customerPhone !== undefined ? (dto.customerPhone ?? '') : existing.customerPhone;
+    const customerEmail =
+      dto.customerEmail !== undefined ? (dto.customerEmail ?? null) : existing.customerEmail;
+    return {
+      customerPhone,
+      customerEmail,
+      contactEmailKey: emailKey(customerEmail),
+      contactPhoneKey: phoneKey(customerPhone),
+    };
   }
 
   /**
@@ -744,11 +812,7 @@ export class ReservationsService {
             where: { id, tenantId, status: ReservationStatus.CONFIRMED },
             data: {
               customerName: dto.customerName ?? existing.customerName,
-              // `?? ''` porque customerPhone é String não-nula no schema: enviar null
-              // LIMPA o telefone (o `??` sozinho tratava null como "manter o antigo")
-              customerPhone:
-                dto.customerPhone !== undefined ? (dto.customerPhone ?? '') : existing.customerPhone,
-              customerEmail: dto.customerEmail !== undefined ? dto.customerEmail : existing.customerEmail,
+              ...this.contactFieldsFor(dto, existing),
               notes: dto.notes !== undefined ? dto.notes : existing.notes,
             },
           });
@@ -801,11 +865,7 @@ export class ReservationsService {
             endsAt: end,
             partySize,
             customerName: dto.customerName ?? existing.customerName,
-            // `?? ''` porque customerPhone é String não-nula no schema: enviar null
-            // LIMPA o telefone (o `??` sozinho tratava null como "manter o antigo")
-            customerPhone:
-              dto.customerPhone !== undefined ? (dto.customerPhone ?? '') : existing.customerPhone,
-            customerEmail: dto.customerEmail !== undefined ? dto.customerEmail : existing.customerEmail,
+            ...this.contactFieldsFor(dto, existing),
             notes: dto.notes !== undefined ? dto.notes : existing.notes,
           },
         });

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Ip, Param, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { ReservationsService } from './reservations.service';
@@ -35,8 +35,8 @@ export class PublicReservationsController {
   @Public()
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('stores/:slug/reservations')
-  create(@Param('slug') slug: string, @Body() dto: CreatePublicReservationDto) {
-    return this.reservations.createPublic(slug, dto);
+  create(@Param('slug') slug: string, @Body() dto: CreatePublicReservationDto, @Ip() ip: string) {
+    return this.reservations.createPublic(slug, dto, ip);
   }
 
   /** Consulta uma reserva pelo código — token SEMPRE por header, nunca em query. */
