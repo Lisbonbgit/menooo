@@ -1,10 +1,14 @@
 'use client';
 
-// ⚠️ Esta rota traz um bearer token no fragmento do URL. NENHUM script de terceiros (GA, Meta
-// pixel, GTM) pode entrar no layout do storefront sem strip prévio do fragmento: um pixel
-// amostra location.href COM o fragmento no primeiro paint, antes de o replaceState correr.
+// ⚠️ Esta rota traz um bearer token no fragmento do URL, e o strip só pode acontecer depois da
+// hidratação (ver o useLayoutEffect abaixo) — logo existe uma janela curta em que
+// location.href ainda tem o token. NENHUM script de terceiros (GA, Meta pixel, GTM) pode
+// entrar no layout do storefront: amostraria location.href COM o token no primeiro paint.
+// Hoje o storefront não carrega nenhum (zero gtag/GTM/fbq, zero dangerouslySetInnerHTML) —
+// está a salvo, mas por acidente. O TTL do token (startsAt+24h, na API) é o que limita o
+// estrago se algum dia escapar.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -97,21 +101,36 @@ const STATUS_META: Record<ReservationStatus, { label: string; className: string 
 };
 
 export function ReservaClient({ slug, code }: { slug: string; code: string }) {
-  // Ler o fragmento e limpá-lo do URL de forma SÍNCRONA, no topo do componente e antes de
-  // qualquer outro efeito: entre o primeiro paint e um useEffect cabe tudo o que leia
-  // location.href. Gravar no sessionStorage ANTES do replaceState é o que mantém o F5 a
-  // funcionar — e o que torna inócuo o duplo-render do StrictMode (que corre este
-  // initializer 2×: à segunda o hash já não existe e o token vem do sessionStorage).
+  // Ler o fragmento e guardá-lo SÍNCRONAMENTE, antes de qualquer efeito: o sessionStorage é o
+  // que mantém o F5 a funcionar, e é o que torna inócuo o duplo-render do StrictMode (à 2.ª
+  // volta o hash pode já não existir e o token vem daqui).
   const [token] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null;
     const m = window.location.hash.match(/[#&]t=([a-f0-9]{64})/i);
     if (m) {
       saveToken(code, m[1]);
-      history.replaceState(null, '', window.location.pathname); // tira o token do URL/histórico
       return m[1];
     }
     return readToken(code);
   });
+
+  // A limpeza do URL TEM de viver num layout effect, não no initializer acima.
+  //
+  // Porquê: o Next patcheia o `history.replaceState` («Avoid a loop when Next.js internally
+  // calls…») e, durante a hidratação, a chamada não pega — VERIFICADO em browser: com o strip
+  // no initializer, o `#t=…` continuava no `location.href` aos 300 ms e aos 1,8 s, embora o
+  // sessionStorage já tivesse o token. Ou seja, o código parecia certo e não fazia nada; só um
+  // browser o podia apanhar.
+  //
+  // O useLayoutEffect corre depois da hidratação mas ANTES do primeiro paint, que é o ponto
+  // mais cedo em que isto funciona mesmo. Fica uma janela minúscula, entre o parse do HTML e a
+  // hidratação, em que `location.href` ainda tem o token — daí o aviso no topo do ficheiro:
+  // nenhum script de terceiros no layout do storefront (hoje não há nenhum, confirmado).
+  useLayoutEffect(() => {
+    if (window.location.hash.includes('t=')) {
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+  }, []);
 
   // O servidor NUNCA vê o fragmento, logo renderiza sempre «a carregar». Sem esta porta o
   // HTML do servidor («não encontrada», por não haver token) não bateria certo com o do
