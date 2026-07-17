@@ -18,15 +18,18 @@ import { slotMinutes } from './slots.util';
 import { assignTables } from './assign.util';
 import { dayHasSlot, occupiedAt } from './days.util';
 import { emailKey, phoneKey } from './contact.util';
+import { ServiceLike, servicesOfWeekday, windowsOf } from './services.util';
 import { TurnstileService } from './turnstile.service';
 import { CreatePublicReservationDto } from './dto/public-reservation.dto';
 import {
   CreateBlockDto,
   CreateManualReservationDto,
+  CreateServiceDto,
   CreateTableDto,
   SetWindowsDto,
   UpdateReservationDto,
   UpdateReservationStatusDto,
+  UpdateServiceDto,
   UpdateTableDto,
 } from './dto/panel.dto';
 
@@ -58,7 +61,7 @@ function isRealDateISO(dateISO: string): boolean {
 }
 
 type TenantWithHours = Prisma.TenantGetPayload<{
-  include: { account: true; openingHours: true; reservationWindows: true };
+  include: { account: true; openingHours: true; reservationWindows: true; reservationServices: true };
 }>;
 
 type ReservationWithTables = Prisma.ReservationGetPayload<{
@@ -87,7 +90,9 @@ export class ReservationsService {
   private async gatedTenant(slug: string): Promise<TenantWithHours> {
     const t = await this.prisma.tenant.findUnique({
       where: { slug },
-      include: { account: true, openingHours: true, reservationWindows: true },
+      // reservationWindows MANTÉM-SE no include: a tabela ainda existe (expand, o DROP é de um
+      // ciclo posterior) e o rollback por imagem para a R3 depende de ela continuar a ser lida.
+      include: { account: true, openingHours: true, reservationWindows: true, reservationServices: true },
     });
     if (!t || t.status !== 'ACTIVE' || !isSubscriptionUsable(t.account) || !t.reservationsEnabled) {
       throw new NotFoundException('Loja não encontrada.');
@@ -95,12 +100,14 @@ export class ReservationsService {
     return t;
   }
 
-  /** Janelas de SEATING de um weekday: ReservationWindow ou fallback OpeningHour−60. */
+  /**
+   * Janelas de SEATING de um weekday: ReservationService ou fallback OpeningHour−60.
+   * Delega no windowsOf, que devolve a MESMA forma que esta função devolvia a partir das
+   * ReservationWindow — é por isso que o slotMinutes, o slotsForDayTx, o publicDays e os
+   * testes de DST não são tocados.
+   */
   private windowsFor(tenant: TenantWithHours, weekday: number) {
-    const own = tenant.reservationWindows.filter((w) => w.weekday === weekday);
-    if (own.length > 0) return own.map((w) => ({ openMinute: w.openMinute, closeMinute: w.closeMinute }));
-    const oh = tenant.openingHours.find((h) => h.weekday === weekday);
-    return oh ? [{ openMinute: oh.openMinute, closeMinute: oh.closeMinute - 60 }] : [];
+    return windowsOf(tenant.reservationServices, tenant.openingHours, weekday);
   }
 
   // ==========================================================================
@@ -327,7 +334,7 @@ export class ReservationsService {
   private async requireTenant(tenantId: string): Promise<TenantWithHours> {
     const t = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
-      include: { account: true, openingHours: true, reservationWindows: true },
+      include: { account: true, openingHours: true, reservationWindows: true, reservationServices: true },
     });
     if (!t) throw new NotFoundException('Restaurante não encontrado.');
     return t;
@@ -1009,6 +1016,135 @@ export class ReservationsService {
       { timeout: 15_000 },
     );
     return this.listWindows(tenantId);
+  }
+
+  // ==========================================================================
+  // Painel — Serviços de reserva (Almoço/Jantar)
+  // ==========================================================================
+
+  listServices(tenantId: string) {
+    return this.prisma.reservationService.findMany({
+      where: { tenantId },
+      orderBy: [{ sortOrder: 'asc' }, { openMinute: 'asc' }],
+    });
+  }
+
+  /** Regras de horas: as mesmas que as janelas já tinham (fecho > abertura; teto das 23:00). */
+  private assertServiceTimes(openMinute: number, closeMinute: number) {
+    if (closeMinute <= openMinute) {
+      throw new BadRequestException('O fecho tem de ser depois da abertura.');
+    }
+    if (closeMinute > 1380) {
+      throw new BadRequestException('A última hora de reserva não pode passar das 23:00.');
+    }
+  }
+
+  /** Dois serviços que partilhem um weekday não podem sobrepor-se: os slots duplicariam e a
+   *  grelha de horas mentiria. (A validação é nova — o backfill da T1 funde as sobreposições
+   *  que já existam, senão um tenant migrado ficaria sem poder gravar nada.) */
+  private assertNoOverlap(existing: ServiceLike[], candidate: ServiceLike, ignoreId?: string) {
+    for (const s of existing) {
+      if (s.id === ignoreId) continue;
+      if (!s.weekdays.some((d) => candidate.weekdays.includes(d))) continue;
+      if (candidate.openMinute < s.closeMinute && s.openMinute < candidate.closeMinute) {
+        throw new BadRequestException(
+          `O serviço sobrepõe-se a "${s.name}" nos dias que partilham. Ajusta as horas ou os dias.`,
+        );
+      }
+    }
+  }
+
+  async createService(tenantId: string, dto: CreateServiceDto) {
+    this.assertServiceTimes(dto.openMinute, dto.closeMinute);
+    const weekdays = [...new Set(dto.weekdays)].sort((a, b) => a - b);
+    const existing = await this.listServices(tenantId);
+    this.assertNoOverlap(existing, {
+      id: '',
+      name: dto.name,
+      weekdays,
+      openMinute: dto.openMinute,
+      closeMinute: dto.closeMinute,
+      sortOrder: 0,
+    });
+    // sortOrder por omissão = a seguir ao último: @default(0) em todos deixaria a ordem dos
+    // chips do painel ao critério do Postgres (ver §4.2 do spec).
+    const sortOrder =
+      dto.sortOrder ?? (existing.length > 0 ? Math.max(...existing.map((s) => s.sortOrder)) + 1 : 0);
+    return this.prisma.reservationService.create({
+      data: {
+        tenantId,
+        name: dto.name,
+        weekdays,
+        openMinute: dto.openMinute,
+        closeMinute: dto.closeMinute,
+        sortOrder,
+      },
+    });
+  }
+
+  async updateService(tenantId: string, id: string, dto: UpdateServiceDto) {
+    const atual = await this.prisma.reservationService.findFirst({ where: { id, tenantId } });
+    if (!atual) throw new NotFoundException('Serviço não encontrado.');
+    // Campo a campo com `??`: um `{ ...atual, ...dto }` deixaria as chaves ausentes do PATCH
+    // (que chegam como `undefined`) apagar o valor atual.
+    const merged: ServiceLike = {
+      id: atual.id,
+      name: dto.name ?? atual.name,
+      weekdays: dto.weekdays ? [...new Set(dto.weekdays)].sort((a, b) => a - b) : atual.weekdays,
+      openMinute: dto.openMinute ?? atual.openMinute,
+      closeMinute: dto.closeMinute ?? atual.closeMinute,
+      sortOrder: dto.sortOrder ?? atual.sortOrder,
+    };
+    this.assertServiceTimes(merged.openMinute, merged.closeMinute);
+    const existing = await this.listServices(tenantId);
+    this.assertNoOverlap(existing, merged, id);
+    return this.prisma.reservationService.update({
+      where: { id: atual.id },
+      data: {
+        name: merged.name,
+        weekdays: merged.weekdays,
+        openMinute: merged.openMinute,
+        closeMinute: merged.closeMinute,
+        sortOrder: merged.sortOrder,
+      },
+    });
+  }
+
+  async deleteService(tenantId: string, id: string) {
+    const result = await this.prisma.reservationService.deleteMany({ where: { id, tenantId } });
+    if (result.count === 0) throw new NotFoundException('Serviço não encontrado.');
+    return { deleted: true };
+  }
+
+  /**
+   * Os serviços de um dia, já com o sintético resolvido — é isto que a timeline e o mapa navegam.
+   */
+  async listServicesForDay(tenantId: string, dateISO: string) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateISO ?? '') || !isRealDateISO(dateISO)) {
+      throw new BadRequestException('Data inválida.');
+    }
+    const tenant = await this.requireTenant(tenantId);
+    const wd = weekdayOf(dateISO);
+    const own = servicesOfWeekday(tenant.reservationServices, wd);
+    if (own.length > 0) {
+      return own.map((s) => ({
+        id: s.id,
+        name: s.name,
+        openMinute: s.openMinute,
+        closeMinute: s.closeMinute,
+        synthetic: false,
+      }));
+    }
+    // Fallback: o dia corre pelo horário de abertura. Devolvê-lo COMO SERVIÇO evita que a
+    // timeline e o mapa nasçam vazios para a maioria dos tenants (que não tem serviços nenhuns).
+    const w = windowsOf([], tenant.openingHours, wd);
+    return w.map((x) => ({
+      id: `synthetic-${wd}`,
+      name: 'Horário de abertura',
+      openMinute: x.openMinute,
+      closeMinute: x.closeMinute,
+      synthetic: true,
+    }));
   }
 
   // ==========================================================================

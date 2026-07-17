@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
+  ArrayNotEmpty,
   IsArray,
   IsBoolean,
   IsEmail,
@@ -89,6 +90,41 @@ export class SetWindowsDto {
   @ValidateNested({ each: true })
   @Type(() => ReservationWindowDto)
   windows!: ReservationWindowDto[];
+}
+
+// ==========================================================================
+// Serviços de reserva (Almoço/Jantar) — substituem as janelas (expand: as duas coexistem)
+// ==========================================================================
+
+export class CreateServiceDto {
+  @IsString() @IsNotEmpty() @MaxLength(60) name!: string;
+  /** 0=domingo … 6=sábado (convenção do OpeningHour). */
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayMaxSize(7)
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  @Max(6, { each: true })
+  weekdays!: number[];
+  @IsInt() @Min(0) @Max(1440) openMinute!: number;
+  /** Teto das 23:00: o último slot COMEÇA aqui (janela de seating, não de estadia). */
+  @IsInt() @Min(0) @Max(1380) closeMinute!: number;
+  @IsOptional() @IsInt() @Min(0) sortOrder?: number;
+}
+
+export class UpdateServiceDto {
+  @IsOptional() @IsString() @IsNotEmpty() @MaxLength(60) name?: string;
+  @IsOptional()
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayMaxSize(7)
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  @Max(6, { each: true })
+  weekdays?: number[];
+  @IsOptional() @IsInt() @Min(0) @Max(1440) openMinute?: number;
+  @IsOptional() @IsInt() @Min(0) @Max(1380) closeMinute?: number;
+  @IsOptional() @IsInt() @Min(0) sortOrder?: number;
 }
 
 // ==========================================================================

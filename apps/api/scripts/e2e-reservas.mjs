@@ -192,8 +192,11 @@ async function cleanup(prisma, tenantId, ownerToken, originalConfig) {
       const delTab = await prisma.table.deleteMany({ where: { tenantId } });
       const delBlk = await prisma.reservationBlock.deleteMany({ where: { tenantId } });
       const delWin = await prisma.reservationWindow.deleteMany({ where: { tenantId } });
+      // Os serviços TÊM de sair: são eles que passaram a governar a disponibilidade, logo um
+      // serviço deixado para trás muda a grelha de slots da corrida seguinte.
+      const delSvc = await prisma.reservationService.deleteMany({ where: { tenantId } });
       console.log(
-        `  apagados: ${delRes.count} reservas, ${delTab.count} mesas, ${delBlk.count} bloqueios, ${delWin.count} janelas (prisma direto)`,
+        `  apagados: ${delRes.count} reservas, ${delTab.count} mesas, ${delBlk.count} bloqueios, ${delWin.count} janelas, ${delSvc.count} serviços (prisma direto)`,
       );
     }
   } catch (e) {
@@ -300,15 +303,21 @@ async function main() {
     check('listagem tem as 5 mesas', listT.json?.length === 5, `got ${listT.json?.length}`);
 
     // =========================================================================
-    // 4. PUT /reservation-windows: amanhã (weekday calculado) 12:00–14:00
+    // 4. POST /reservation-services: amanhã (weekday calculado) 12:00–14:00
     // =========================================================================
-    console.log(`— 4. janela de reservas (weekday ${WEEKDAY}, 12:00–14:00)`);
-    const win = await req('PUT', '/reservation-windows', {
+    // R4: a disponibilidade passou a vir da ReservationService (o windowsFor delega no
+    // windowsOf). A ReservationWindow ainda existe (expand), mas já NÃO é lida — montar aqui
+    // uma janela deixaria o dia a correr pelo fallback do horário de abertura e todos os
+    // checks de slots abaixo mediriam a grelha errada. As asserções não mudaram: é isso que
+    // prova que o motor de slots ficou igual.
+    console.log(`— 4. serviço de reservas (weekday ${WEEKDAY}, 12:00–14:00)`);
+    const win = await req('POST', '/reservation-services', {
       token: ownerToken,
-      body: { windows: [{ weekday: WEEKDAY, openMinute: 720, closeMinute: 840 }] },
+      body: { name: 'Almoço', weekdays: [WEEKDAY], openMinute: 720, closeMinute: 840 },
     });
-    check('PUT windows 200', win.status === 200, `got ${win.status} ${JSON.stringify(win.json)}`);
-    check('janela devolvida', win.json?.length === 1 && win.json[0].weekday === WEEKDAY);
+    check('POST serviço 201', win.status === 201, `got ${win.status} ${JSON.stringify(win.json)}`);
+    check('serviço devolvido', win.json?.weekdays?.includes(WEEKDAY) && win.json?.openMinute === 720);
+    const servicoId = win.json?.id;
 
     // =========================================================================
     // 5. Slots amanhã party=2 → contém 12:00 e 14:00, não 14:30
@@ -654,13 +663,13 @@ async function main() {
     // =========================================================================
     console.log('— 22. janela larga: alternativas por proximidade, Turnstile no-op, TTL, cancelamento tardio');
     // A janela 12:00–14:00 dos pontos anteriores só dá 5 slots — poucos para distinguir
-    // "4 mais próximos" de "4 primeiros do dia". Alarga-se aqui (o PUT substitui a lista
-    // toda) porque todos os pontos que dependiam da janela estreita já correram.
-    const wideWin = await req('PUT', '/reservation-windows', {
+    // "4 mais próximos" de "4 primeiros do dia". Alarga-se aqui (PATCH ao mesmo serviço)
+    // porque todos os pontos que dependiam da janela estreita já correram.
+    const wideWin = await req('PATCH', `/reservation-services/${servicoId}`, {
       token: ownerToken,
-      body: { windows: [{ weekday: WEEKDAY, openMinute: 720, closeMinute: 1320 }] }, // 12:00–22:00
+      body: { openMinute: 720, closeMinute: 1320 }, // 12:00–22:00
     });
-    check('PUT janela larga 12:00–22:00 200', wideWin.status === 200, `got ${wideWin.status} ${JSON.stringify(wideWin.json)}`);
+    check('PATCH serviço largo 12:00–22:00 200', wideWin.status === 200, `got ${wideWin.status} ${JSON.stringify(wideWin.json)}`);
 
     // Ocupa TODAS as mesas reserváveis online às 20:00 (duração 120 → [20:00, 22:00)):
     // sobra 12:00–18:00 antes e 22:00 depois, logo os 4 mais próximos de 20:00 caem nas

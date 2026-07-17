@@ -6,10 +6,12 @@ import { TurnstileService } from './turnstile.service';
 import {
   CreateBlockDto,
   CreateManualReservationDto,
+  CreateServiceDto,
   CreateTableDto,
   SetWindowsDto,
   UpdateReservationDto,
   UpdateReservationStatusDto,
+  UpdateServiceDto,
   UpdateTableDto,
 } from './dto/panel.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -133,6 +135,51 @@ export class ReservationsController {
   @Put('reservation-windows')
   setWindows(@TenantId() tenantId: string, @Body() dto: SetWindowsDto) {
     return this.reservations.setWindows(tenantId, dto);
+  }
+
+  // ----- Serviços de reserva -----
+  // Todas com @Roles explícito: o RolesGuard falha ABERTO (`if (!required) return true`), logo
+  // um método sem o decorador fica acessível a qualquer autenticado — o tablet da COZINHA incluído.
+
+  @ApiBearerAuth()
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.OWNER, UserRole.STAFF)
+  @Get('reservation-services')
+  listServices(@TenantId() tenantId: string) {
+    return this.reservations.listServices(tenantId);
+  }
+
+  /** Declarada ANTES de qualquer 'reservation-services/:id': senão o Nest resolve 'day' como :id. */
+  @ApiBearerAuth()
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.OWNER, UserRole.STAFF)
+  @Get('reservation-services/day')
+  listServicesForDay(@TenantId() tenantId: string, @Query('date') date: string) {
+    return this.reservations.listServicesForDay(tenantId, date);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.OWNER, UserRole.STAFF)
+  @Post('reservation-services')
+  createService(@TenantId() tenantId: string, @Body() dto: CreateServiceDto) {
+    return this.reservations.createService(tenantId, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.OWNER, UserRole.STAFF)
+  @Patch('reservation-services/:id')
+  updateService(@TenantId() tenantId: string, @Param('id') id: string, @Body() dto: UpdateServiceDto) {
+    return this.reservations.updateService(tenantId, id, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.OWNER, UserRole.STAFF)
+  @Delete('reservation-services/:id')
+  deleteService(@TenantId() tenantId: string, @Param('id') id: string) {
+    return this.reservations.deleteService(tenantId, id);
   }
 
   // ----- Bloqueios de dia -----
