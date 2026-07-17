@@ -21,6 +21,8 @@ export interface Store {
   zipCode?: string | null;
   reservationMaxPartySize?: number;
   reservationMaxAdvanceDays?: number;
+  /** Tolerância de atraso, em minutos: «A tua mesa fica guardada X minutos». */
+  reservationGraceMin?: number;
 }
 
 export interface Modifier {

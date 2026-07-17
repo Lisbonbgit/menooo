@@ -16,10 +16,13 @@ import {
   XCircle,
 } from 'lucide-react';
 import { api } from '@/lib/api';
-import { useTables, useTenantConfig, useUpdateTenantConfig, useWindows } from '@/lib/reservations-hooks';
+import { useTables, useTenantConfig, useUpdateTenantConfig } from '@/lib/reservations-hooks';
 import { serverError } from '@/components/ReservationSettings';
-import { useHours, type OpeningHour } from '@/lib/settings-hooks';
-import type { ReservationConfig, ReservationWindow } from '@/lib/reservation-types';
+// A prontidão passou a ler os SERVIÇOS (não as janelas): o `effectiveHours` e o `hhmm` são os
+// mesmos que o ServicesCard usa, para o cartão nunca divergir do que o dono edita.
+import { effectiveHours, hhmm, useServices } from '@/components/ServicesCard';
+import { useHours } from '@/lib/settings-hooks';
+import type { ReservationConfig } from '@/lib/reservation-types';
 
 /**
  * `GET /tenants/me` devolve o tenant completo, mas o tipo partilhado da R2 só declara a
@@ -68,63 +71,8 @@ function useResLinkShared(tenantId: string | undefined): boolean {
   return shared;
 }
 
-// ==========================================================================
-// Horas efetivas — o que o cliente vai mesmo ver
-// ==========================================================================
-
-const WEEKDAYS: { value: number; short: string }[] = [
-  { value: 1, short: 'Seg' },
-  { value: 2, short: 'Ter' },
-  { value: 3, short: 'Qua' },
-  { value: 4, short: 'Qui' },
-  { value: 5, short: 'Sex' },
-  { value: 6, short: 'Sáb' },
-  { value: 0, short: 'Dom' },
-];
-
-const hhmm = (m: number) =>
-  `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
-
-interface DayHours {
-  weekday: number;
-  short: string;
-  /** primeira e última hora a que se consegue reservar, por faixa */
-  ranges: { first: number; last: number }[];
-  source: 'window' | 'hours';
-}
-
-/**
- * Espelha o servidor, e tem de continuar a espelhá-lo: `windowsFor` (reservations.service)
- * usa as janelas do dia e, quando não há nenhuma, cai no horário de abertura com
- * `closeMinute - 60`; `slotMinutes` (slots.util) arranca no múltiplo de 30 a seguir à
- * abertura e vai até ao fecho, inclusive. Se estas duas contas divergirem, o cartão mente
- * ao dono sobre as horas que a loja está a publicar — que é exatamente o que ele vem aqui
- * confirmar.
- */
-export function effectiveHours(windows: ReservationWindow[], hours: OpeningHour[]): DayHours[] {
-  const out: DayHours[] = [];
-  for (const w of WEEKDAYS) {
-    const own = windows.filter((x) => x.weekday === w.value);
-    const oh = hours.find((h) => h.weekday === w.value);
-    const raw =
-      own.length > 0
-        ? own.map((x) => ({ openMinute: x.openMinute, closeMinute: x.closeMinute }))
-        : oh
-          ? [{ openMinute: oh.openMinute, closeMinute: oh.closeMinute - 60 }]
-          : [];
-
-    const ranges: { first: number; last: number }[] = [];
-    for (const r of raw) {
-      const first = Math.ceil(r.openMinute / 30) * 30;
-      if (first > r.closeMinute) continue; // faixa curta demais para caber um slot
-      ranges.push({ first, last: first + Math.floor((r.closeMinute - first) / 30) * 30 });
-    }
-    if (ranges.length > 0) {
-      out.push({ weekday: w.value, short: w.short, ranges, source: own.length > 0 ? 'window' : 'hours' });
-    }
-  }
-  return out;
-}
+// O `effectiveHours` e o `hhmm` mudaram-se para o ServicesCard (a mesma conta que o dono edita)
+// e são importados no topo. Aqui só se lê o resultado.
 
 // ==========================================================================
 // Bloco de prontidão
@@ -140,7 +88,7 @@ export function ReadinessCard({
   const config = useTenantConfig();
   const updateConfig = useUpdateTenantConfig();
   const tables = useTables();
-  const windows = useWindows();
+  const services = useServices();
   const hours = useHours();
   const [toggling, setToggling] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
@@ -164,7 +112,7 @@ export function ReadinessCard({
   if (!tenant) return null;
 
   const bookable = (tables.data ?? []).filter((t) => t.active && t.bookableOnline);
-  const days = effectiveHours(windows.data ?? [], hours.data ?? []);
+  const days = effectiveHours(services.data ?? [], hours.data ?? []);
   const fallbackDays = days.filter((d) => d.source === 'hours');
   const hasEmail = !!(tenant.email ?? '').trim();
   const enabled = tenant.reservationsEnabled === true;
@@ -314,12 +262,12 @@ export function ReadinessCard({
             }
             desc={
               days.length === 0
-                ? 'Não há janelas de reserva nem horário de abertura — nenhum dia teria horas para escolher.'
+                ? 'Não há serviços nem horário de abertura — nenhum dia teria horas para escolher.'
                 : undefined
             }
             action={
               days.length === 0 ? (
-                <RowButton onClick={onGoSettings}>Definir janelas</RowButton>
+                <RowButton onClick={onGoSettings}>Criar serviços</RowButton>
               ) : undefined
             }
           >
@@ -339,21 +287,21 @@ export function ReadinessCard({
                 {fallbackDays.length > 0 && (
                   <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
                     <p className="text-[11.5px] leading-relaxed text-amber-900">
-                      Os dias marcados <strong>(horário)</strong> vêm do teu horário de abertura,
-                      não de janelas — a última reserva é 1h antes de fechares. Se fechas a meio
-                      da tarde, o horário contínuo deixa reservar à hora do fecho da cozinha (ex.:{' '}
                       <strong>
                         {fallbackDays[0].short} {hhmm(fallbackDays[0].ranges[0].first)}–
                         {hhmm(fallbackDays[0].ranges[0].last)}
-                      </strong>
-                      ).
+                      </strong>{' '}
+                      — vem do teu horário de abertura, não de um serviço: a última reserva é 1h
+                      antes de fechares. Se fechas a meio da tarde, o horário contínuo deixa
+                      reservar à hora em que a cozinha já está fechada. Cria serviços (Almoço,
+                      Jantar) para mandares nas horas.
                     </p>
                     <button
                       type="button"
                       onClick={onGoSettings}
                       className="mt-1.5 text-[11.5px] font-semibold text-amber-900 underline"
                     >
-                      Definir janelas de almoço/jantar
+                      Criar serviços
                     </button>
                   </div>
                 )}

@@ -284,9 +284,14 @@ export function ReservaClient({ slug, code }: { slug: string; code: string }) {
         </div>
       </div>
 
-      {r.status === 'CONFIRMED' && (
+      {/* Tolerância de atraso. Vem da loja (`useStore`), não da reserva: só sai com valor, porque
+          o campo é gated por `reservationsEnabled` (o dono pode ter desligado as reservas depois
+          desta ficar marcada) e pode ser 0. Inventar 15 seria prometer o que o restaurante não
+          disse. A linha de contacto aqui em baixo cobre o resto. */}
+      {r.status === 'CONFIRMED' && !!s?.reservationGraceMin && (
         <p className="mt-4 rounded-xl bg-cream/60 px-4 py-3 text-[12.5px] leading-relaxed text-ink-soft">
-          Chega à hora marcada; se te atrasares, liga ao restaurante para não perderes a mesa.
+          A tua mesa fica guardada {s.reservationGraceMin}{' '}
+          {s.reservationGraceMin === 1 ? 'minuto' : 'minutos'}.
         </p>
       )}
 

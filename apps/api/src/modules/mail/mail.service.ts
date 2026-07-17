@@ -22,6 +22,13 @@ export interface ReservationMailInfo {
   partySize: number;
   tableNames: string[];
   manageUrl?: string;
+  /**
+   * Tolerância de atraso do restaurante (`Tenant.reservationGraceMin`), em minutos.
+   * OPCIONAL de propósito: sem valor, a frase não é escrita. Um default de 15 aqui prometia ao
+   * cliente uma tolerância que o dono pode não dar — e quem se atrasa a contar com ela perde a
+   * mesa.
+   */
+  graceMin?: number;
 }
 
 /**
@@ -155,6 +162,16 @@ export class MailService {
   private tableLabel(names: string[]): string {
     if (names.length === 0) return '—';
     return names.length > 1 ? `Mesas ${names.join(', ')}` : `Mesa ${names[0]}`;
+  }
+
+  /**
+   * «A tua mesa fica guardada 15 minutos.» — substitui o texto fixo da R3 («chega à hora
+   * marcada; se te atrasares, liga…»). Sem tolerância (ausente ou 0) devolve string vazia: mais
+   * vale não prometer nada do que prometer um número que não é o do restaurante.
+   */
+  private graceLine(graceMin?: number): string {
+    if (!graceMin || graceMin <= 0) return '';
+    return this.p(`A tua mesa fica guardada ${graceMin} ${graceMin === 1 ? 'minuto' : 'minutos'}.`);
   }
 
   // ==========================================================================
@@ -321,6 +338,7 @@ export class MailService {
         this.p(
           `<strong>${info.dateText}</strong>, às <strong>${info.timeText}</strong> · ${this.pax(info.partySize)} · ${this.tableLabel(info.tableNames)}<br>Código da reserva: <strong>${info.code}</strong>`,
         ) +
+        this.graceLine(info.graceMin) +
         (info.manageUrl ? this.cta('Gerir reserva', info.manageUrl) : ''),
     );
   }

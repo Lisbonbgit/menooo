@@ -274,9 +274,15 @@ export function ReservarClient({ slug }: { slug: string }) {
             )}
           </div>
 
-          <p className="mt-4 text-[12.5px] leading-relaxed text-ink-soft">
-            Chega à hora marcada; se te atrasares, liga ao restaurante para não perderes a mesa.
-          </p>
+          {/* Tolerância de atraso. Só sai com valor: o campo vem gated por `reservationsEnabled`
+              e o dono pode pô-lo a 0. Um default de 15 aqui prometia uma tolerância que o
+              restaurante pode não dar — e quem se atrasa a contar com ela perde a mesa. */}
+          {!!s.reservationGraceMin && (
+            <p className="mt-4 text-[12.5px] leading-relaxed text-ink-soft">
+              A tua mesa fica guardada {s.reservationGraceMin}{' '}
+              {s.reservationGraceMin === 1 ? 'minuto' : 'minutos'}.
+            </p>
+          )}
 
           {/* BOTÃO, nunca o URL como texto: o link de gestão É a credencial e um token em
               texto literal entra em todos os screenshots («olha, reservei!»). */}

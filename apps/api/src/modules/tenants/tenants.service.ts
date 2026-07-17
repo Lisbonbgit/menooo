@@ -68,6 +68,10 @@ export class TenantsService {
             zipCode: rest.zipCode,
             reservationMaxPartySize: rest.reservationMaxPartySize,
             reservationMaxAdvanceDays: rest.reservationMaxAdvanceDays,
+            // Tolerância de atraso: é o que a loja promete ao cliente («a tua mesa fica guardada
+            // X minutos»). Vai aqui dentro, com o resto — a API não publica dados de quem não
+            // usa reservas.
+            reservationGraceMin: rest.reservationGraceMin,
           }
         : {}),
     };
