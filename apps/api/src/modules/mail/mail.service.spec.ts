@@ -210,6 +210,16 @@ describe('MailService — emails de encomenda', () => {
     }
   });
 
+  it('o assunto NÃO faz HTML-escape do nome da loja (assunto é texto simples, não HTML)', async () => {
+    // Nomes com & e ' são comuns em PT ("Pão & Companhia", "D'Avó"). O corpo é HTML
+    // e escapa; o assunto é texto simples e tem de mostrar o nome cru.
+    await svc.sendOrderAccepted('ana@x.pt', 'Ana', info({ restaurantName: "Pão & D'Avó" }));
+    const subject = sendMail.mock.calls[0][0].subject as string;
+    expect(subject).toContain("Pão & D'Avó");
+    expect(subject).not.toContain('&amp;');
+    expect(subject).not.toContain('&#39;');
+  });
+
   it('READY diz «levantar» num PICKUP e «a caminho» numa DELIVERY', async () => {
     await svc.sendOrderReady('ana@x.pt', 'Ana', info({ type: OrderType.PICKUP }));
     const pickupHtml = sendMail.mock.calls[0][0].html as string;

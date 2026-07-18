@@ -443,7 +443,7 @@ export class MailService {
   async sendOrderAccepted(to: string, customerName: string, info: OrderMailInfo) {
     await this.send(
       to,
-      `Pedido nº ${info.number} aceite — ${this.esc(info.restaurantName)}`,
+      `Pedido nº ${info.number} aceite — ${info.restaurantName}`,
       this.h('Pedido aceite!') +
         this.p(
           `Olá ${this.esc(customerName)}, o teu pedido nº <strong>${info.number}</strong> foi aceite e está em preparação.`,
@@ -468,7 +468,7 @@ export class MailService {
           );
     await this.send(
       to,
-      `Pedido nº ${info.number} pronto — ${this.esc(info.restaurantName)}`,
+      `Pedido nº ${info.number} pronto — ${info.restaurantName}`,
       this.h('O teu pedido está pronto!') + corpo,
     );
   }
@@ -476,7 +476,7 @@ export class MailService {
   async sendOrderCompleted(to: string, customerName: string, info: OrderMailInfo) {
     await this.send(
       to,
-      `Obrigado! Pedido nº ${info.number} — ${this.esc(info.restaurantName)}`,
+      `Obrigado! Pedido nº ${info.number} — ${info.restaurantName}`,
       this.h('Bom apetite!') +
         this.p(
           `Olá ${this.esc(customerName)}, obrigado pela tua encomenda na <strong>${this.esc(info.restaurantName)}</strong>.`,
@@ -489,7 +489,7 @@ export class MailService {
   async sendOrderCancelled(to: string, customerName: string, info: OrderMailInfo) {
     await this.send(
       to,
-      `Pedido nº ${info.number} cancelado — ${this.esc(info.restaurantName)}`,
+      `Pedido nº ${info.number} cancelado — ${info.restaurantName}`,
       this.h('Pedido cancelado') +
         this.p(
           `Olá ${this.esc(customerName)}, lamentamos — o teu pedido nº <strong>${info.number}</strong> foi cancelado pelo restaurante.`,
