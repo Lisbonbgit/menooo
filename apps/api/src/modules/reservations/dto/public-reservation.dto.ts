@@ -20,8 +20,22 @@ export class CreatePublicReservationDto {
   @IsEmail() @MaxLength(200) customerEmail!: string;
   @IsOptional() @IsString() @MaxLength(500) notes?: string;
   @IsOptional() @IsBoolean() marketingConsent?: boolean;
+  // `main.ts` usa forbidNonWhitelisted: true — sem esta declaração TODOS os POSTs levam 400
+  // assim que a sitekey existir no storefront. Não é opcional de facto.
+  @IsOptional() @IsString() @MaxLength(2048) turnstileToken?: string;
 }
 
 export class CancelReservationDto {
   @IsString() @IsNotEmpty() @MaxLength(128) token!: string;
+}
+
+// Consultar/cancelar por número + email (caminho paralelo ao token). O
+// forbidNonWhitelisted do main.ts obriga a declarar cada campo.
+export class LookupReservationDto {
+  @IsString() @IsNotEmpty() @MaxLength(20) code!: string; // o código é curto (base32 6)
+  @IsEmail() @MaxLength(200) email!: string;
+}
+
+export class CancelByEmailDto {
+  @IsEmail() @MaxLength(200) email!: string;
 }

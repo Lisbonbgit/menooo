@@ -16,14 +16,21 @@ import { isSubscriptionUsable } from '../tenants/subscription.util';
 import { localDateISO, localDateTimeToUtc, minutesOfDayInTz, weekdayOf } from './time.util';
 import { slotMinutes } from './slots.util';
 import { assignTables } from './assign.util';
+import { dayHasSlot, occupiedAt } from './days.util';
+import { emailKey, phoneKey } from './contact.util';
+import { ServiceLike, servicesOfWeekday, windowsOf } from './services.util';
+import { TurnstileService } from './turnstile.service';
 import { CreatePublicReservationDto } from './dto/public-reservation.dto';
 import {
   CreateBlockDto,
   CreateManualReservationDto,
+  CreateServiceDto,
   CreateTableDto,
+  SetLayoutDto,
   SetWindowsDto,
   UpdateReservationDto,
   UpdateReservationStatusDto,
+  UpdateServiceDto,
   UpdateTableDto,
 } from './dto/panel.dto';
 
@@ -55,15 +62,24 @@ function isRealDateISO(dateISO: string): boolean {
 }
 
 type TenantWithHours = Prisma.TenantGetPayload<{
-  include: { account: true; openingHours: true; reservationWindows: true };
+  include: { account: true; openingHours: true; reservationWindows: true; reservationServices: true };
 }>;
 
 type ReservationWithTables = Prisma.ReservationGetPayload<{
   include: { tables: { include: { table: true } } };
 }>;
 
+/** Reserva com mesas + tenant — a forma que o publicByCode/cancelByToken carregam e que os
+ *  refactors partilhados (publicReservationView/doCancel) recebem. */
+type ReservationWithTablesAndTenant = Prisma.ReservationGetPayload<{
+  include: { tables: { include: { table: true } }; tenant: true };
+}>;
+
 /** Subconjunto do Tenant necessário para emails/manageUrl (aceita tenant "cheio" ou só relação). */
-type TenantForMail = Pick<Tenant, 'id' | 'name' | 'slug' | 'timezone' | 'email' | 'accountId'>;
+type TenantForMail = Pick<
+  Tenant,
+  'id' | 'name' | 'slug' | 'timezone' | 'email' | 'accountId' | 'reservationGraceMin'
+>;
 
 @Injectable()
 export class ReservationsService {
@@ -73,6 +89,7 @@ export class ReservationsService {
     private readonly prisma: PrismaService,
     private readonly gateway: OrdersGateway,
     private readonly mail: MailService,
+    private readonly turnstile: TurnstileService,
   ) {}
 
   // ==========================================================================
@@ -83,7 +100,9 @@ export class ReservationsService {
   private async gatedTenant(slug: string): Promise<TenantWithHours> {
     const t = await this.prisma.tenant.findUnique({
       where: { slug },
-      include: { account: true, openingHours: true, reservationWindows: true },
+      // reservationWindows MANTÉM-SE no include: a tabela ainda existe (expand, o DROP é de um
+      // ciclo posterior) e o rollback por imagem para a R3 depende de ela continuar a ser lida.
+      include: { account: true, openingHours: true, reservationWindows: true, reservationServices: true },
     });
     if (!t || t.status !== 'ACTIVE' || !isSubscriptionUsable(t.account) || !t.reservationsEnabled) {
       throw new NotFoundException('Loja não encontrada.');
@@ -91,12 +110,14 @@ export class ReservationsService {
     return t;
   }
 
-  /** Janelas de SEATING de um weekday: ReservationWindow ou fallback OpeningHour−60. */
+  /**
+   * Janelas de SEATING de um weekday: ReservationService ou fallback OpeningHour−60.
+   * Delega no windowsOf, que devolve a MESMA forma que esta função devolvia a partir das
+   * ReservationWindow — é por isso que o slotMinutes, o slotsForDayTx, o publicDays e os
+   * testes de DST não são tocados.
+   */
   private windowsFor(tenant: TenantWithHours, weekday: number) {
-    const own = tenant.reservationWindows.filter((w) => w.weekday === weekday);
-    if (own.length > 0) return own.map((w) => ({ openMinute: w.openMinute, closeMinute: w.closeMinute }));
-    const oh = tenant.openingHours.find((h) => h.weekday === weekday);
-    return oh ? [{ openMinute: oh.openMinute, closeMinute: oh.closeMinute - 60 }] : [];
+    return windowsOf(tenant.reservationServices, tenant.openingHours, weekday);
   }
 
   // ==========================================================================
@@ -112,6 +133,70 @@ export class ReservationsService {
     const tenant = await this.gatedTenant(slug);
     const result = await this.slotsForDay(tenant, dateISO, party, 'ONLINE');
     return { ...result, slots: result.slots.map((s) => s.label) };
+  }
+
+  /** Disponibilidade de um INTERVALO (1 query de reservas + 1 de mesas para tudo). */
+  async publicDays(slug: string, fromISO: string, toISO: string, party: number) {
+    const okISO = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s ?? '') && isRealDateISO(s);
+    if (!okISO(fromISO) || !okISO(toISO) || !Number.isInteger(party) || party < 1 || party > 50) {
+      throw new BadRequestException('Parâmetros inválidos.');
+    }
+    const spanDays = Math.round((Date.parse(toISO) - Date.parse(fromISO)) / 86_400_000);
+    if (spanDays < 0 || spanDays > 62) throw new BadRequestException('Intervalo inválido.');
+
+    const tenant = await this.gatedTenant(slug);
+    const tz = tenant.timezone || 'Europe/Lisbon';
+    if (party > tenant.reservationMaxPartySize) {
+      return { days: [], reason: 'party', contactPhone: tenant.phone };
+    }
+
+    const dates: string[] = [];
+    for (let i = 0; i <= spanDays; i++) {
+      dates.push(localDateISO(new Date(Date.parse(fromISO) + i * 86_400_000), 'UTC'));
+    }
+
+    const rangeStart = localDateTimeToUtc(dates[0], 0, tz);
+    const rangeEnd = new Date(localDateTimeToUtc(dates[dates.length - 1], 0, tz).getTime() + 36 * 3_600_000);
+    const bufMs = tenant.reservationBufferMin * 60_000;
+    const durMs = tenant.reservationDurationMin * 60_000;
+    const notBefore = Date.now() + tenant.reservationMinNoticeMin * 60_000;
+
+    const [busy, tables, blocks] = await Promise.all([
+      this.prisma.reservation.findMany({
+        where: {
+          tenantId: tenant.id,
+          status: 'CONFIRMED',
+          startsAt: { lt: new Date(rangeEnd.getTime() + bufMs) },
+          endsAt: { gt: new Date(rangeStart.getTime() - bufMs) },
+        },
+        include: { tables: true },
+      }),
+      this.prisma.table.findMany({ where: { tenantId: tenant.id, active: true } }),
+      this.prisma.reservationBlock.findMany({
+        where: { tenantId: tenant.id, date: { in: dates } },
+      }),
+    ]);
+    const blocked = new Set(blocks.map((b) => b.date));
+    const todayISO = localDateISO(new Date(), tz);
+
+    const days = dates.map((date) => {
+      const diffDays = Math.round((Date.parse(date) - Date.parse(todayISO)) / 86_400_000);
+      if (blocked.has(date) || diffDays < 0 || diffDays > tenant.reservationMaxAdvanceDays) {
+        return { date, hasSlots: false };
+      }
+      const minutesList = slotMinutes(this.windowsFor(tenant, weekdayOf(date)));
+      if (minutesList.length === 0) return { date, hasSlots: false };
+      const seen = new Set<number>();
+      const starts: Date[] = [];
+      for (const m of minutesList) {
+        const start = localDateTimeToUtc(date, m, tz);
+        if (seen.has(start.getTime())) continue; // dedup DST
+        seen.add(start.getTime());
+        starts.push(start);
+      }
+      return { date, hasSlots: dayHasSlot(starts, busy, tables, party, durMs, bufMs, notBefore) };
+    });
+    return { days };
   }
 
   /** Variante fora de transação — delega em slotsForDayTx com this.prisma. */
@@ -174,12 +259,8 @@ export class ReservationsService {
       seen.add(start.getTime());
       if (start.getTime() < notBefore) continue;
       const end = new Date(start.getTime() + durMs);
-      const occupied = new Set<string>();
-      for (const r of busy) {
-        if (r.startsAt.getTime() < end.getTime() + bufMs && r.endsAt.getTime() + bufMs > start.getTime()) {
-          for (const rt of r.tables) occupied.add(rt.tableId);
-        }
-      }
+      // mesma função do lote (publicDays) — se as regras divergirem, o lote mente ao cliente
+      const occupied = occupiedAt(busy, start, end, bufMs);
       if (assignTables(tables, occupied, party, channel)) {
         slots.push({ label: hhmm(m), start });
       }
@@ -263,7 +344,7 @@ export class ReservationsService {
   private async requireTenant(tenantId: string): Promise<TenantWithHours> {
     const t = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
-      include: { account: true, openingHours: true, reservationWindows: true },
+      include: { account: true, openingHours: true, reservationWindows: true, reservationServices: true },
     });
     if (!t) throw new NotFoundException('Restaurante não encontrado.');
     return t;
@@ -289,7 +370,9 @@ export class ReservationsService {
     return h * 60 + mi;
   }
 
-  async createPublic(slug: string, dto: CreatePublicReservationDto) {
+  async createPublic(slug: string, dto: CreatePublicReservationDto, remoteIp?: string) {
+    // PRIMEIRA linha, antes de qualquer query: não se gasta DB em pedidos que vão ser recusados.
+    await this.turnstile.verify(dto.turnstileToken, remoteIp);
     if (!isRealDateISO(dto.date)) throw new BadRequestException('Data inválida.');
     const tenant = await this.gatedTenant(slug);
     const tz = tenant.timezone || 'Europe/Lisbon';
@@ -316,25 +399,46 @@ export class ReservationsService {
         // (limitação conhecida do driver do Prisma) — $executeRaw não lê colunas.
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${tenant.id}))`;
 
-        // cap anti-spam: máx. 2 reservas futuras confirmadas por contacto (dentro do lock)
-        const activeByContact = await tx.reservation.count({
-          where: {
-            tenantId: tenant.id,
-            status: 'CONFIRMED',
-            startsAt: { gt: new Date() },
-            OR: [{ customerEmail: dto.customerEmail }, { customerPhone: dto.customerPhone }],
-          },
-        });
-        if (activeByContact >= 2) {
-          throw new HttpException('Já tens reservas ativas neste restaurante. Contacta-o diretamente.', 429);
+        // Cap anti-spam por contacto NORMALIZADO (dentro do lock): `Ana@x.pt` e `ana@x.pt `
+        // são a MESMA caixa, `+351 912 345 678` e `912345678` o MESMO telefone. 409 e não 429:
+        // o 429 fica exclusivo do throttle, senão o cliente não distingue os dois — e o
+        // ThrottlerException sai em inglês. 3 e não 2: a 2 apanhava o casal que partilha
+        // telefone e quem marca sexta+domingo (o cliente fiel).
+        const eKey = emailKey(dto.customerEmail);
+        const pKey = phoneKey(dto.customerPhone);
+        const contactOr: Prisma.ReservationWhereInput[] = [];
+        if (eKey) contactOr.push({ contactEmailKey: eKey });
+        if (pKey) contactOr.push({ contactPhoneKey: pKey });
+        if (contactOr.length > 0) {
+          const activeByContact = await tx.reservation.count({
+            where: { tenantId: tenant.id, status: 'CONFIRMED', startsAt: { gt: new Date() }, OR: contactOr },
+          });
+          if (activeByContact >= 3) {
+            throw new ConflictException({
+              message: 'Já tens reservas ativas neste restaurante. Liga-nos para marcar mais.',
+              code: 'CONTACT_CAP',
+              contactPhone: tenant.phone,
+            });
+          }
         }
 
         // revalida o pipeline COMPLETO dentro do lock — comparação pelo INSTANTE, não pelo label
         const { slots } = await this.slotsForDayTx(tx, tenant, dto.date, dto.partySize, 'ONLINE');
         if (!slots.some((s) => s.start.getTime() === wanted.getTime())) {
+          // Alternativas por PROXIMIDADE da hora pedida: `slice(0, 4)` cru dava os 4 primeiros
+          // do dia e quem tenta 21:00 recebia «12:00 · 12:30 · 13:00» — lê-se como avaria.
+          const near = slots
+            .slice()
+            .sort(
+              (a, b) =>
+                Math.abs(a.start.getTime() - wanted.getTime()) -
+                Math.abs(b.start.getTime() - wanted.getTime()),
+            )
+            .slice(0, 4)
+            .sort((a, b) => a.start.getTime() - b.start.getTime()); // cronológico só para exibir
           throw new ConflictException({
             message: 'Esse horário acabou de ficar ocupado.',
-            alternatives: slots.slice(0, 4).map((s) => s.label),
+            alternatives: near.map((s) => s.label),
           });
         }
         const start = wanted;
@@ -351,6 +455,8 @@ export class ReservationsService {
           customerName: dto.customerName,
           customerPhone: dto.customerPhone,
           customerEmail: dto.customerEmail,
+          contactEmailKey: eKey,
+          contactPhoneKey: pKey,
           notes: dto.notes ?? null,
           marketingConsent: dto.marketingConsent ?? false,
           tables: { create: tableIds.map((id) => ({ tableId: id })) },
@@ -396,12 +502,13 @@ export class ReservationsService {
     return a.length === b.length && timingSafeEqual(a, b);
   }
 
-  async publicByCode(code: string, token: string | undefined) {
-    const row = await this.prisma.reservation.findUnique({
-      where: { code },
-      include: { tables: { include: { table: true } }, tenant: true },
-    });
-    if (!row || !this.verifyToken(row, token)) throw new NotFoundException('Reserva não encontrada.');
+  /**
+   * Shape público de uma reserva — o MESMO objeto que o publicByCode devolvia inline (tableNames
+   * incluído; o cliente é que decidiu não o renderizar na R3). Partilhado pelo caminho do token
+   * (publicByCode) e pelo caminho por email (publicByEmail); dropar campos mudaria o contrato de
+   * um endpoint em produção.
+   */
+  private publicReservationView(row: ReservationWithTablesAndTenant) {
     const tz = row.tenant.timezone || 'Europe/Lisbon';
     return {
       code: row.code,
@@ -413,16 +520,37 @@ export class ReservationsService {
       partySize: row.partySize,
       tableNames: row.tables.map((rt) => rt.table.name),
       restaurantName: row.tenant.name,
+      restaurantPhone: row.tenant.phone,
     };
   }
 
-  async cancelByToken(code: string, token: string) {
+  async publicByCode(code: string, token: string | undefined) {
     const row = await this.prisma.reservation.findUnique({
       where: { code },
       include: { tables: { include: { table: true } }, tenant: true },
     });
     if (!row || !this.verifyToken(row, token)) throw new NotFoundException('Reserva não encontrada.');
-    if (row.status !== ReservationStatus.CONFIRMED || row.startsAt.getTime() <= Date.now()) {
+    // O token expira por TEMPO e não por estado: quem clica no link logo após cancelar
+    // continua a ver "reserva cancelada" em vez de um 404 confuso. Sem isto o cancelToken é
+    // uma credencial bearer ETERNA — cada fuga (email reencaminhado, screenshot, histórico
+    // sincronizado, quiosque) passava de janela a permanente.
+    if (row.startsAt.getTime() + 24 * 3_600_000 < Date.now()) {
+      throw new NotFoundException('Reserva não encontrada.');
+    }
+    return this.publicReservationView(row);
+  }
+
+  /**
+   * Mecânica de cancelamento partilhada (token e email): a reserva já vem AUTORIZADA (o chamador
+   * verificou token ou email); aqui só a guarda de estado + a guarda atómica + socket/emails.
+   * Uma só cópia garante que cancelar por token e por email são idênticos (mesmo «até endsAt»,
+   * mesma emissão de socket e emails).
+   */
+  private async doCancel(row: ReservationWithTablesAndTenant) {
+    // Até `endsAt` e não `startsAt`: um cancelamento tardio é sempre melhor para o dono que um
+    // no-show mudo. Antes, quem se atrasava 10 min e queria avisar levava um erro seco e a mesa
+    // ficava bloqueada os 120 min até alguém marcar NO_SHOW à mão.
+    if (row.status !== ReservationStatus.CONFIRMED || row.endsAt.getTime() <= Date.now()) {
       throw new BadRequestException('Esta reserva já não pode ser cancelada.');
     }
     // guarda atómica: só cancela se ainda estiver CONFIRMED (evita corrida com o painel)
@@ -439,6 +567,65 @@ export class ReservationsService {
       this.logger.error(`pós-cancelamento de reserva falhou: ${e?.message ?? e}`),
     );
     return { ok: true };
+  }
+
+  async cancelByToken(code: string, token: string) {
+    const row = await this.prisma.reservation.findUnique({
+      where: { code },
+      include: { tables: { include: { table: true } }, tenant: true },
+    });
+    if (!row || !this.verifyToken(row, token)) throw new NotFoundException('Reserva não encontrada.');
+    // Mesmo TTL do publicByCode — o token não é uma credencial eterna.
+    if (row.startsAt.getTime() + 24 * 3_600_000 < Date.now()) {
+      throw new NotFoundException('Reserva não encontrada.');
+    }
+    return this.doCancel(row);
+  }
+
+  // ==========================================================================
+  // View / cancelamento por número + email (caminho paralelo ao token)
+  // ==========================================================================
+
+  /**
+   * Autorização por email — o CORAÇÃO desta feature. Espelha o verifyToken mas exige que a
+   * reserva seja ONLINE: `cancelTokenHash != null` é avaliado ANTES do match de email, para que
+   * as reservas MANUAIS (VIP/depósito/evento que o restaurante gere ao balcão) fiquem FORA do
+   * self-service público — o mesmo invariante que o verifyToken já garante ao caminho do token
+   * («MANUAL nunca acessível»). Sem este guard, um terceiro que soubesse código+email cancelava
+   * a reserva que o restaurante criou à mão.
+   *
+   * Resposta NEUTRA (404 igual) em TODOS os casos de falha — nunca revela se o código existe:
+   *   - row null (código inexistente)
+   *   - cancelTokenHash null (reserva MANUAL/legado)
+   *   - contactEmailKey !== key (email não bate)
+   *   - fora do TTL (startsAt + 24h já passou; igual ao caminho do token)
+   */
+  private async authorizeByEmail(code: string, email: string) {
+    const key = emailKey(email);
+    if (!key) throw new NotFoundException('Reserva não encontrada.');
+    const row = await this.prisma.reservation.findUnique({
+      // o código é gerado em maiúsculas (coluna @unique case-sensitive); aqui o cliente escreve-o
+      // à mão e no telemóvel sai muitas vezes em minúsculas — normalizar senão nunca encontra.
+      where: { code: code.trim().toUpperCase() },
+      include: { tables: { include: { table: true } }, tenant: true },
+    });
+    if (
+      !row ||
+      !row.cancelTokenHash || // ← o guard que fecha as reservas MANUAIS/legado (equivale a source ONLINE)
+      row.contactEmailKey !== key || // email não bate
+      row.startsAt.getTime() + 24 * 3_600_000 < Date.now() // fora do TTL
+    ) {
+      throw new NotFoundException('Reserva não encontrada.');
+    }
+    return row;
+  }
+
+  async publicByEmail(code: string, email: string) {
+    return this.publicReservationView(await this.authorizeByEmail(code, email));
+  }
+
+  async cancelByEmail(code: string, email: string) {
+    return this.doCancel(await this.authorizeByEmail(code, email));
   }
 
   // ==========================================================================
@@ -512,6 +699,10 @@ export class ReservationsService {
       partySize: row.partySize,
       tableNames: row.tables.map((rt) => rt.table.name),
       manageUrl: token ? this.manageUrl(tenant.slug, row.code, token) : undefined,
+      // «A tua mesa fica guardada X minutos» no email de confirmação (R4). O gatedTenant traz o
+      // tenant inteiro, logo o campo está cá; se um dia algum chamador passar um tenant só-relação
+      // sem este campo, o `?? undefined` faz a frase simplesmente não aparecer (é opcional).
+      graceMin: tenant.reservationGraceMin ?? undefined,
     };
   }
 
@@ -552,10 +743,81 @@ export class ReservationsService {
     });
   }
 
+  /**
+   * O PATCH de `reservationsEnabled` recusa ligar as reservas com 0 mesas reserváveis, mas isso
+   * só guarda a TRANSIÇÃO. Sem isto chega-se ao mesmo estado proibido pelas traseiras: ligar com
+   * uma mesa e depois apagá-la/desativá-la — e o resultado é o mesmo, uma montra a prometer
+   * "Reservar mesa" e 30 dias vazios, sem sinal nenhum ao dono.
+   */
+  private async assertStillBookable(
+    tx: Prisma.TransactionClient | PrismaService,
+    tenantId: string,
+    excludeTableId: string,
+  ) {
+    const tenant = await tx.tenant.findUnique({
+      where: { id: tenantId },
+      select: { reservationsEnabled: true },
+    });
+    if (!tenant?.reservationsEnabled) return; // reservas desligadas: o dono faz o que quiser
+    const remaining = await tx.table.count({
+      where: { tenantId, active: true, bookableOnline: true, id: { not: excludeTableId } },
+    });
+    if (remaining === 0) {
+      throw new ConflictException(
+        'Esta é a tua última mesa reservável online e as reservas estão ligadas. ' +
+          'Desliga as reservas online primeiro, ou cria outra mesa.',
+      );
+    }
+  }
+
   async updateTable(tenantId: string, id: string, dto: UpdateTableDto) {
-    const result = await this.prisma.table.updateMany({ where: { id, tenantId }, data: dto });
+    // só verificar quando a edição TIRA a mesa do online — tornar reservável nunca parte nada
+    if (dto.active === false || dto.bookableOnline === false) {
+      await this.assertStillBookable(this.prisma, tenantId, id);
+    }
+    // Mudar de área leva o x,y consigo e a mesa aterra em cima de outra na sala nova, sem
+    // ninguém ter arrastado nada. A posição numa sala não quer dizer nada noutra.
+    const data: Prisma.TableUpdateManyMutationInput = { ...dto };
+    if (dto.area !== undefined) {
+      const atual = await this.prisma.table.findFirst({
+        where: { id, tenantId },
+        select: { area: true },
+      });
+      if (atual && (atual.area ?? null) !== (dto.area ?? null)) {
+        data.x = null;
+        data.y = null;
+      }
+    }
+    const result = await this.prisma.table.updateMany({ where: { id, tenantId }, data });
     if (result.count === 0) throw new NotFoundException('Mesa não encontrada.');
     return this.prisma.table.findUniqueOrThrow({ where: { id } });
+  }
+
+  /**
+   * Grava o layout de uma área inteira. O PUT leva TODAS as mesas da área, não só as que se
+   * mexeram: se levasse só as duas de uma troca, o auto-layout das restantes nunca ficaria
+   * gravado e dois dispositivos veriam salas diferentes até alguém arrastar.
+   * Transação: uma troca são duas mesas a mudar, e o estado intermédio seria visível.
+   */
+  async setLayout(tenantId: string, dto: SetLayoutDto) {
+    const ids = dto.positions.map((p) => p.id);
+    if (new Set(ids).size !== ids.length) throw new BadRequestException('Mesas repetidas.');
+    const chaves = dto.positions.map((p) => `${p.x},${p.y}`);
+    if (new Set(chaves).size !== chaves.length) {
+      throw new BadRequestException('Duas mesas na mesma célula.');
+    }
+    return this.prisma.$transaction(async (tx) => {
+      // a área entra no where: uma mesa de outra área (ou de outro tenant) dá 404, não um
+      // update silencioso que a arrastava para uma sala onde ninguém a pôs
+      const owned = await tx.table.count({
+        where: { id: { in: ids }, tenantId, area: dto.area ?? null },
+      });
+      if (owned !== ids.length) throw new NotFoundException('Mesa não encontrada.');
+      for (const p of dto.positions) {
+        await tx.table.updateMany({ where: { id: p.id, tenantId }, data: { x: p.x, y: p.y } });
+      }
+      return { saved: dto.positions.length };
+    });
   }
 
   /** Apaga a mesa; recusa (409) se tiver reservas no histórico — desativa-a em vez disso. */
@@ -567,6 +829,8 @@ export class ReservationsService {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${tenantId}))`;
         const owned = await tx.table.count({ where: { id, tenantId } });
         if (owned === 0) throw new NotFoundException('Mesa não encontrada.');
+        // dentro do lock: ninguém cria outra mesa entre este check e o delete
+        await this.assertStillBookable(tx, tenantId, id);
         const history = await tx.reservationTable.count({ where: { tableId: id } });
         if (history > 0) {
           throw new ConflictException(
@@ -632,6 +896,10 @@ export class ReservationsService {
           customerName: dto.customerName,
           customerPhone: dto.customerPhone ?? '',
           customerEmail: dto.customerEmail ?? null,
+          // Uma reserva manual sem keys não contaria para o cap: quem liga a marcar 3× e
+          // depois marca online passaria a ter 6 reservas ativas em vez de 3.
+          contactEmailKey: emailKey(dto.customerEmail),
+          contactPhoneKey: phoneKey(dto.customerPhone),
           notes: dto.notes ?? null,
           tables: { create: tableIds.map((tableId) => ({ tableId })) },
         });
@@ -641,6 +909,28 @@ export class ReservationsService {
 
     this.gateway.emitReservationCreated(tenantId, this.publicRow(row));
     return this.publicRow(row);
+  }
+
+  /**
+   * Contactos resolvidos de uma edição + as keys do cap em LOCKSTEP com eles: a key tem de
+   * derivar do valor GRAVADO e não do dto — senão editar o telefone deixa lá a key antiga e o
+   * cap continua a contar o contacto que já não existe. `undefined` mantém o antigo (o
+   * `JSON.stringify` deita a chave fora); null LIMPA (daí o `?? ''` / `?? null`).
+   */
+  private contactFieldsFor(
+    dto: UpdateReservationDto,
+    existing: Pick<Reservation, 'customerPhone' | 'customerEmail'>,
+  ) {
+    const customerPhone =
+      dto.customerPhone !== undefined ? (dto.customerPhone ?? '') : existing.customerPhone;
+    const customerEmail =
+      dto.customerEmail !== undefined ? (dto.customerEmail ?? null) : existing.customerEmail;
+    return {
+      customerPhone,
+      customerEmail,
+      contactEmailKey: emailKey(customerEmail),
+      contactPhoneKey: phoneKey(customerPhone),
+    };
   }
 
   /**
@@ -682,11 +972,7 @@ export class ReservationsService {
             where: { id, tenantId, status: ReservationStatus.CONFIRMED },
             data: {
               customerName: dto.customerName ?? existing.customerName,
-              // `?? ''` porque customerPhone é String não-nula no schema: enviar null
-              // LIMPA o telefone (o `??` sozinho tratava null como "manter o antigo")
-              customerPhone:
-                dto.customerPhone !== undefined ? (dto.customerPhone ?? '') : existing.customerPhone,
-              customerEmail: dto.customerEmail !== undefined ? dto.customerEmail : existing.customerEmail,
+              ...this.contactFieldsFor(dto, existing),
               notes: dto.notes !== undefined ? dto.notes : existing.notes,
             },
           });
@@ -739,11 +1025,7 @@ export class ReservationsService {
             endsAt: end,
             partySize,
             customerName: dto.customerName ?? existing.customerName,
-            // `?? ''` porque customerPhone é String não-nula no schema: enviar null
-            // LIMPA o telefone (o `??` sozinho tratava null como "manter o antigo")
-            customerPhone:
-              dto.customerPhone !== undefined ? (dto.customerPhone ?? '') : existing.customerPhone,
-            customerEmail: dto.customerEmail !== undefined ? dto.customerEmail : existing.customerEmail,
+            ...this.contactFieldsFor(dto, existing),
             notes: dto.notes !== undefined ? dto.notes : existing.notes,
           },
         });
@@ -854,6 +1136,135 @@ export class ReservationsService {
       { timeout: 15_000 },
     );
     return this.listWindows(tenantId);
+  }
+
+  // ==========================================================================
+  // Painel — Serviços de reserva (Almoço/Jantar)
+  // ==========================================================================
+
+  listServices(tenantId: string) {
+    return this.prisma.reservationService.findMany({
+      where: { tenantId },
+      orderBy: [{ sortOrder: 'asc' }, { openMinute: 'asc' }],
+    });
+  }
+
+  /** Regras de horas: as mesmas que as janelas já tinham (fecho > abertura; teto das 23:00). */
+  private assertServiceTimes(openMinute: number, closeMinute: number) {
+    if (closeMinute <= openMinute) {
+      throw new BadRequestException('O fecho tem de ser depois da abertura.');
+    }
+    if (closeMinute > 1380) {
+      throw new BadRequestException('A última hora de reserva não pode passar das 23:00.');
+    }
+  }
+
+  /** Dois serviços que partilhem um weekday não podem sobrepor-se: os slots duplicariam e a
+   *  grelha de horas mentiria. (A validação é nova — o backfill da T1 funde as sobreposições
+   *  que já existam, senão um tenant migrado ficaria sem poder gravar nada.) */
+  private assertNoOverlap(existing: ServiceLike[], candidate: ServiceLike, ignoreId?: string) {
+    for (const s of existing) {
+      if (s.id === ignoreId) continue;
+      if (!s.weekdays.some((d) => candidate.weekdays.includes(d))) continue;
+      if (candidate.openMinute < s.closeMinute && s.openMinute < candidate.closeMinute) {
+        throw new BadRequestException(
+          `O serviço sobrepõe-se a "${s.name}" nos dias que partilham. Ajusta as horas ou os dias.`,
+        );
+      }
+    }
+  }
+
+  async createService(tenantId: string, dto: CreateServiceDto) {
+    this.assertServiceTimes(dto.openMinute, dto.closeMinute);
+    const weekdays = [...new Set(dto.weekdays)].sort((a, b) => a - b);
+    const existing = await this.listServices(tenantId);
+    this.assertNoOverlap(existing, {
+      id: '',
+      name: dto.name,
+      weekdays,
+      openMinute: dto.openMinute,
+      closeMinute: dto.closeMinute,
+      sortOrder: 0,
+    });
+    // sortOrder por omissão = a seguir ao último: @default(0) em todos deixaria a ordem dos
+    // chips do painel ao critério do Postgres (ver §4.2 do spec).
+    const sortOrder =
+      dto.sortOrder ?? (existing.length > 0 ? Math.max(...existing.map((s) => s.sortOrder)) + 1 : 0);
+    return this.prisma.reservationService.create({
+      data: {
+        tenantId,
+        name: dto.name,
+        weekdays,
+        openMinute: dto.openMinute,
+        closeMinute: dto.closeMinute,
+        sortOrder,
+      },
+    });
+  }
+
+  async updateService(tenantId: string, id: string, dto: UpdateServiceDto) {
+    const atual = await this.prisma.reservationService.findFirst({ where: { id, tenantId } });
+    if (!atual) throw new NotFoundException('Serviço não encontrado.');
+    // Campo a campo com `??`: um `{ ...atual, ...dto }` deixaria as chaves ausentes do PATCH
+    // (que chegam como `undefined`) apagar o valor atual.
+    const merged: ServiceLike = {
+      id: atual.id,
+      name: dto.name ?? atual.name,
+      weekdays: dto.weekdays ? [...new Set(dto.weekdays)].sort((a, b) => a - b) : atual.weekdays,
+      openMinute: dto.openMinute ?? atual.openMinute,
+      closeMinute: dto.closeMinute ?? atual.closeMinute,
+      sortOrder: dto.sortOrder ?? atual.sortOrder,
+    };
+    this.assertServiceTimes(merged.openMinute, merged.closeMinute);
+    const existing = await this.listServices(tenantId);
+    this.assertNoOverlap(existing, merged, id);
+    return this.prisma.reservationService.update({
+      where: { id: atual.id },
+      data: {
+        name: merged.name,
+        weekdays: merged.weekdays,
+        openMinute: merged.openMinute,
+        closeMinute: merged.closeMinute,
+        sortOrder: merged.sortOrder,
+      },
+    });
+  }
+
+  async deleteService(tenantId: string, id: string) {
+    const result = await this.prisma.reservationService.deleteMany({ where: { id, tenantId } });
+    if (result.count === 0) throw new NotFoundException('Serviço não encontrado.');
+    return { deleted: true };
+  }
+
+  /**
+   * Os serviços de um dia, já com o sintético resolvido — é isto que a timeline e o mapa navegam.
+   */
+  async listServicesForDay(tenantId: string, dateISO: string) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateISO ?? '') || !isRealDateISO(dateISO)) {
+      throw new BadRequestException('Data inválida.');
+    }
+    const tenant = await this.requireTenant(tenantId);
+    const wd = weekdayOf(dateISO);
+    const own = servicesOfWeekday(tenant.reservationServices, wd);
+    if (own.length > 0) {
+      return own.map((s) => ({
+        id: s.id,
+        name: s.name,
+        openMinute: s.openMinute,
+        closeMinute: s.closeMinute,
+        synthetic: false,
+      }));
+    }
+    // Fallback: o dia corre pelo horário de abertura. Devolvê-lo COMO SERVIÇO evita que a
+    // timeline e o mapa nasçam vazios para a maioria dos tenants (que não tem serviços nenhuns).
+    const w = windowsOf([], tenant.openingHours, wd);
+    return w.map((x) => ({
+      id: `synthetic-${wd}`,
+      name: 'Horário de abertura',
+      openMinute: x.openMinute,
+      closeMinute: x.closeMinute,
+      synthetic: true,
+    }));
   }
 
   // ==========================================================================

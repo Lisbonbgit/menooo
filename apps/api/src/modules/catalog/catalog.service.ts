@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { isSubscriptionUsable } from '../tenants/subscription.util';
 import { CreateCategoryDto, UpdateCategoryDto } from './dto/category.dto';
@@ -45,6 +46,27 @@ export class CatalogService {
     await this.ensureCategory(tenantId, id);
     await this.prisma.category.delete({ where: { id } });
     return { deleted: true };
+  }
+
+  /**
+   * Reordena TODAS as categorias do tenant em lote (transação). Espelha o `setLayout` da R4:
+   * count + updates DENTRO da mesma transação, `updateMany({ id, tenantId })` como barreira de
+   * tenant (não há unique composto), e exige a lista COMPLETA — um subconjunto deixaria as
+   * omitidas com o sortOrder antigo, a colidir com os índices 0..n-1 → ordem baralhada, sem erro.
+   */
+  async reorderCategories(tenantId: string, ids: string[]) {
+    if (new Set(ids).size !== ids.length) throw new BadRequestException('IDs repetidos.');
+    return this.prisma.$transaction(async (tx) => {
+      const total = await tx.category.count({ where: { tenantId } });
+      const owned = await tx.category.count({ where: { id: { in: ids }, tenantId } });
+      if (owned !== ids.length || owned !== total) {
+        throw new BadRequestException('A lista tem de conter todas as categorias, sem repetidos.');
+      }
+      for (const [i, id] of ids.entries()) {
+        await tx.category.updateMany({ where: { id, tenantId }, data: { sortOrder: i } });
+      }
+      return { reordered: ids.length };
+    });
   }
 
   // ==========================================================================
@@ -103,9 +125,45 @@ export class CatalogService {
   }
 
   async updateProduct(tenantId: string, id: string, dto: UpdateProductDto) {
-    await this.ensureProduct(tenantId, id);
+    const current = await this.ensureProduct(tenantId, id);
     if (dto.categoryId) await this.ensureCategory(tenantId, dto.categoryId);
-    return this.prisma.product.update({ where: { id }, data: dto });
+    const data: Prisma.ProductUncheckedUpdateInput = { ...dto };
+    // Mudar de categoria: o sortOrder vinha numerado na categoria de ORIGEM. Recolocar no FIM da
+    // destino, senão o produto aterra empatado/aleatório (o desempate é por name/id). O sortOrder
+    // continua a ser dono EXCLUSIVO deste caminho — o modal de edição nunca o envia.
+    if (dto.categoryId && dto.categoryId !== current.categoryId) {
+      const last = await this.prisma.product.aggregate({
+        where: { tenantId, categoryId: dto.categoryId },
+        _max: { sortOrder: true },
+      });
+      data.sortOrder = (last._max.sortOrder ?? -1) + 1;
+    }
+    return this.prisma.product.update({ where: { id }, data });
+  }
+
+  /**
+   * Reordena TODOS os produtos de UMA categoria em lote (transação). Igual ao reorderCategories,
+   * mas o total/owned filtram por categoryId: impede reordenar para uma categoria de outro tenant,
+   * misturar ids de categorias diferentes, ou deixar produtos de fora.
+   */
+  async reorderProducts(tenantId: string, categoryId: string, ids: string[]) {
+    if (new Set(ids).size !== ids.length) throw new BadRequestException('IDs repetidos.');
+    return this.prisma.$transaction(async (tx) => {
+      const total = await tx.product.count({ where: { tenantId, categoryId } });
+      const owned = await tx.product.count({ where: { id: { in: ids }, tenantId, categoryId } });
+      if (owned !== ids.length || owned !== total) {
+        throw new BadRequestException(
+          'A lista tem de conter todos os produtos da categoria, sem repetidos.',
+        );
+      }
+      for (const [i, id] of ids.entries()) {
+        await tx.product.updateMany({
+          where: { id, tenantId, categoryId },
+          data: { sortOrder: i },
+        });
+      }
+      return { reordered: ids.length };
+    });
   }
 
   async deleteProduct(tenantId: string, id: string) {

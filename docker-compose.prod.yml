@@ -33,6 +33,10 @@ services:
         # `new URL('')` — levando a imagem inteira, que serve os 4 serviços.
         NEXT_PUBLIC_STORE_URL: ${NEXT_PUBLIC_STORE_URL:-https://menooo.com}
         NEXT_PUBLIC_DASHBOARD_URL: ${NEXT_PUBLIC_DASHBOARD_URL:-https://painel.menooo.com}
+        # Sitekey do Turnstile — BUILD arg, não environment: é inlinada no bundle do
+        # storefront durante o build. Mudá-la exige `up -d --build`, não um restart.
+        # Ordem no rollout: sitekey no storefront PRIMEIRO, secret na API só depois.
+        NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${NEXT_PUBLIC_TURNSTILE_SITE_KEY:-}
     container_name: comanda-api
     restart: unless-stopped
     depends_on:
@@ -69,6 +73,14 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       MAIL_FROM: ${MAIL_FROM:-Menooo <onboarding@resend.dev>}
+      # Cloudflare Turnstile nas reservas públicas — a secret é RUNTIME (ao contrário
+      # da sitekey, que é build arg do storefront, acima). Em produção sem secret as
+      # reservas respondem 503 de propósito (fail-closed), salvo TURNSTILE_OPTIONAL=1.
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+      # domínios aceites no `hostname` do token, separados por vírgula; vazio = não valida
+      TURNSTILE_HOSTNAMES: ${TURNSTILE_HOSTNAMES:-}
+      # escape explícito do fail-closed; sem esta linha o .env não chegava ao contentor
+      TURNSTILE_OPTIONAL: ${TURNSTILE_OPTIONAL:-}
     entrypoint: ['/app/apps/api/docker-entrypoint.sh']
     command: ['node', 'apps/api/dist/main.js']
     volumes:

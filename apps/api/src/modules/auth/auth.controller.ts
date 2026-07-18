@@ -28,7 +28,9 @@ export class AuthController {
     return this.auth.registerRestaurant(dto);
   }
 
+  /** Throttle dedicado: o global de 100/min são 144k tentativas de password por dia e por IP. */
   @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('login')
   login(@Body() dto: LoginDto) {
     return this.auth.login(dto);

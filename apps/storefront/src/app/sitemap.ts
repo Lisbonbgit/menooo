@@ -10,6 +10,7 @@ const API = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001') + '/api
 interface PublicStore {
   slug: string;
   updatedAt: string;
+  reservationsEnabled: boolean;
 }
 
 async function fetchStores(): Promise<PublicStore[]> {
@@ -38,5 +39,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.8,
   }));
 
-  return [...staticPages, ...storePages];
+  // /reservar só para quem tem o interruptor ligado: nas outras lojas a rota é um
+  // beco (a página degrada mas não tem conteúdo), e indexá-la só gastava rasteio.
+  const reservationPages: MetadataRoute.Sitemap = stores
+    .filter((s) => s.reservationsEnabled)
+    .map((s) => ({
+      url: `${SITE_URL}/${s.slug}/reservar`,
+      lastModified: new Date(s.updatedAt),
+      changeFrequency: 'weekly',
+      priority: 0.7,
+    }));
+
+  return [...staticPages, ...storePages, ...reservationPages];
 }

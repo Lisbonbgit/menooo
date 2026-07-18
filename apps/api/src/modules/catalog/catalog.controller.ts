@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -14,6 +15,7 @@ import { UserRole } from '@prisma/client';
 import { CatalogService } from './catalog.service';
 import { CreateCategoryDto, UpdateCategoryDto } from './dto/category.dto';
 import { CreateProductDto, UpdateProductDto } from './dto/product.dto';
+import { ReorderCategoriesDto, ReorderProductsDto } from './dto/reorder.dto';
 import {
   CreateModifierDto,
   CreateModifierGroupDto,
@@ -43,6 +45,12 @@ export class CatalogController {
     return this.catalog.createCategory(tenantId, dto);
   }
 
+  // PUT (não @Patch) e declarado ANTES das rotas :id — senão o Nest resolve "reorder" como :id.
+  @Put('categories/reorder')
+  reorderCategories(@TenantId() tenantId: string, @Body() dto: ReorderCategoriesDto) {
+    return this.catalog.reorderCategories(tenantId, dto.ids);
+  }
+
   @Patch('categories/:id')
   updateCategory(
     @TenantId() tenantId: string,
@@ -61,6 +69,12 @@ export class CatalogController {
   @Get('products')
   listProducts(@TenantId() tenantId: string, @Query('categoryId') categoryId?: string) {
     return this.catalog.listProducts(tenantId, categoryId);
+  }
+
+  // PUT (não @Patch) e declarado ANTES das rotas :id — senão "reorder" vira :id → 404.
+  @Put('products/reorder')
+  reorderProducts(@TenantId() tenantId: string, @Body() dto: ReorderProductsDto) {
+    return this.catalog.reorderProducts(tenantId, dto.categoryId, dto.ids);
   }
 
   @Get('products/:id')

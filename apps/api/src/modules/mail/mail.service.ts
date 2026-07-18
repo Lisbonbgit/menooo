@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
+import { OrderType } from '@prisma/client';
 
 // URLs públicas (mesmas envs do billing)
 const DASHBOARD_URL = () => process.env.DASHBOARD_URL ?? 'https://painel.menooo.com';
@@ -22,6 +23,25 @@ export interface ReservationMailInfo {
   partySize: number;
   tableNames: string[];
   manageUrl?: string;
+  /**
+   * Tolerância de atraso do restaurante (`Tenant.reservationGraceMin`), em minutos.
+   * OPCIONAL de propósito: sem valor, a frase não é escrita. Um default de 15 aqui prometia ao
+   * cliente uma tolerância que o dono pode não dar — e quem se atrasa a contar com ela perde a
+   * mesa.
+   */
+  graceMin?: number;
+}
+
+/** Dados de uma encomenda usados nos templates de email (Fase de emails de encomenda). */
+export interface OrderMailInfo {
+  number: number;
+  type: OrderType;
+  restaurantName: string;
+  slug: string;
+  storePhone?: string | null;
+  storeAddress?: string | null;
+  items: { name: string; quantity: number; lineTotal: number }[];
+  total: number;
 }
 
 /**
@@ -58,6 +78,35 @@ export class MailService {
 
   isEnabled(): boolean {
     return !!this.transporter;
+  }
+
+  private readonly recentByRecipient = new Map<string, number[]>();
+  private static readonly MAX_PER_DAY = 5;
+
+  /**
+   * Teto por destinatário: o Turnstile PREÇA o abuso, não o limita. Protege o TERCEIRO cuja
+   * caixa é usada como alvo e a reputação do MAIL_FROM, que é partilhado por TODOS os tenants.
+   *
+   * ⚠️ SÓ para emails cujo destinatário é ESCOLHIDO POR QUEM RESERVA (confirmação e
+   * cancelamento ao cliente). NUNCA para os alertas que vão ao RESTAURANTE: esse endereço é
+   * fixo, um por tenant, logo o teto viraria uma arma — 5 reservas e o dono deixava de receber
+   * alertas 24h, e o email é o único canal dele quando não tem o painel aberto. O bombing do
+   * dono trava-se pelo cap por contacto e pelo Turnstile, não silenciando-o.
+   */
+  private overRecipientLimit(to: string): boolean {
+    const key = to.trim().toLowerCase();
+    const now = Date.now();
+    const win = (this.recentByRecipient.get(key) ?? []).filter((t) => now - t < 86_400_000);
+    if (win.length >= MailService.MAX_PER_DAY) {
+      this.recentByRecipient.set(key, win);
+      return true;
+    }
+    win.push(now);
+    this.recentByRecipient.set(key, win);
+    if (this.recentByRecipient.size > 5_000) {
+      for (const [k, v] of this.recentByRecipient) if (v.every((t) => now - t >= 86_400_000)) this.recentByRecipient.delete(k);
+    }
+    return false;
   }
 
   /** Envio "fire-and-forget": nunca rebenta o fluxo que o chamou. */
@@ -126,6 +175,33 @@ export class MailService {
   private tableLabel(names: string[]): string {
     if (names.length === 0) return '—';
     return names.length > 1 ? `Mesas ${names.join(', ')}` : `Mesa ${names[0]}`;
+  }
+
+  /**
+   * «A tua mesa fica guardada 15 minutos.» — substitui o texto fixo da R3 («chega à hora
+   * marcada; se te atrasares, liga…»). Sem tolerância (ausente ou 0) devolve string vazia: mais
+   * vale não prometer nada do que prometer um número que não é o do restaurante.
+   */
+  private graceLine(graceMin?: number): string {
+    if (!graceMin || graceMin <= 0) return '';
+    return this.p(`A tua mesa fica guardada ${graceMin} ${graceMin === 1 ? 'minuto' : 'minutos'}.`);
+  }
+
+  /** Formata euros em pt-PT: 17 → "17,00 €". */
+  private money(v: number): string {
+    return `${v.toFixed(2).replace('.', ',')} €`;
+  }
+
+  /** Tabela simples dos itens da encomenda (HTML inline, sem estilos externos). */
+  private orderItems(items: OrderMailInfo['items']): string {
+    const rows = items
+      .map(
+        (i) =>
+          `<tr><td style="padding:4px 0;color:#2B211A;font-size:14px;font-family:Arial,Helvetica,sans-serif;">${i.quantity}× ${this.esc(i.name)}</td>` +
+          `<td style="padding:4px 0;color:#2B211A;font-size:14px;font-family:Arial,Helvetica,sans-serif;text-align:right;white-space:nowrap;">${this.money(i.lineTotal)}</td></tr>`,
+      )
+      .join('');
+    return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:8px 0 14px;border-top:1px dashed #EBE1D3;border-bottom:1px dashed #EBE1D3;">${rows}</table>`;
   }
 
   // ==========================================================================
@@ -278,6 +354,10 @@ export class MailService {
 
   /** 6. Reserva confirmada — enviado ao cliente. */
   async sendReservationConfirmed(to: string, customerName: string, info: ReservationMailInfo) {
+    if (this.overRecipientLimit(to)) {
+      this.logger.warn(`mail_rate_limited: destinatário atingiu o teto diário de emails de reserva`);
+      return;
+    }
     await this.send(
       to,
       `Reserva confirmada — ${info.restaurantName} (${info.code})`,
@@ -288,6 +368,7 @@ export class MailService {
         this.p(
           `<strong>${info.dateText}</strong>, às <strong>${info.timeText}</strong> · ${this.pax(info.partySize)} · ${this.tableLabel(info.tableNames)}<br>Código da reserva: <strong>${info.code}</strong>`,
         ) +
+        this.graceLine(info.graceMin) +
         (info.manageUrl ? this.cta('Gerir reserva', info.manageUrl) : ''),
     );
   }
@@ -299,6 +380,10 @@ export class MailService {
     info: ReservationMailInfo,
     byRestaurant: boolean,
   ) {
+    if (this.overRecipientLimit(to)) {
+      this.logger.warn(`mail_rate_limited: destinatário atingiu o teto diário de emails de reserva`);
+      return;
+    }
     await this.send(
       to,
       `Reserva cancelada — ${info.restaurantName} (${info.code})`,
@@ -319,6 +404,8 @@ export class MailService {
     to: string,
     info: ReservationMailInfo & { customerName: string; customerPhone: string; notes?: string | null },
   ) {
+    // SEM teto por destinatário: ver overRecipientLimit(). O endereço do restaurante é fixo —
+    // limitá-lo deixava um atacante silenciar o dono com 5 reservas.
     await this.send(
       to,
       `Nova reserva — ${info.restaurantName} (${info.code})`,
@@ -335,6 +422,7 @@ export class MailService {
 
   /** 9. Aviso ao restaurante: reserva cancelada. */
   async sendReservationCancelledAlert(to: string, info: ReservationMailInfo & { customerName: string }) {
+    // SEM teto por destinatário: ver overRecipientLimit(). Alerta para o restaurante.
     await this.send(
       to,
       `Reserva cancelada — ${info.restaurantName} (${info.code})`,
@@ -344,6 +432,72 @@ export class MailService {
         ) +
         this.p(
           `${this.pax(info.partySize)} · ${info.dateText} às ${info.timeText} · ${this.tableLabel(info.tableNames)}`,
+        ),
+    );
+  }
+
+  // ==========================================================================
+  // Emails de encomenda (estado mudado pelo restaurante — SEM teto por destinatário)
+  // ==========================================================================
+
+  async sendOrderAccepted(to: string, customerName: string, info: OrderMailInfo) {
+    await this.send(
+      to,
+      `Pedido nº ${info.number} aceite — ${info.restaurantName}`,
+      this.h('Pedido aceite!') +
+        this.p(
+          `Olá ${this.esc(customerName)}, o teu pedido nº <strong>${info.number}</strong> foi aceite e está em preparação.`,
+        ) +
+        this.p('Avisamos-te por email assim que estiver pronto.') +
+        this.orderItems(info.items) +
+        this.p(`Total: <strong>${this.money(info.total)}</strong>`),
+    );
+  }
+
+  async sendOrderReady(to: string, customerName: string, info: OrderMailInfo) {
+    const corpo =
+      info.type === OrderType.PICKUP
+        ? this.p(
+            `Olá ${this.esc(customerName)}, o teu pedido nº <strong>${info.number}</strong> está pronto para levantares!`,
+          ) +
+          (info.storeAddress
+            ? this.p(`Levanta em: <strong>${this.esc(info.storeAddress)}</strong>`)
+            : '')
+        : this.p(
+            `Olá ${this.esc(customerName)}, o teu pedido nº <strong>${info.number}</strong> está pronto e vai a caminho!`,
+          );
+    await this.send(
+      to,
+      `Pedido nº ${info.number} pronto — ${info.restaurantName}`,
+      this.h('O teu pedido está pronto!') + corpo,
+    );
+  }
+
+  async sendOrderCompleted(to: string, customerName: string, info: OrderMailInfo) {
+    await this.send(
+      to,
+      `Obrigado! Pedido nº ${info.number} — ${info.restaurantName}`,
+      this.h('Bom apetite!') +
+        this.p(
+          `Olá ${this.esc(customerName)}, obrigado pela tua encomenda na <strong>${this.esc(info.restaurantName)}</strong>.`,
+        ) +
+        this.p('Esperamos que gostes. Quando quiseres repetir, é a um clique de distância.') +
+        this.cta('Pedir novamente', `${STORE_URL()}/${info.slug}`),
+    );
+  }
+
+  async sendOrderCancelled(to: string, customerName: string, info: OrderMailInfo) {
+    await this.send(
+      to,
+      `Pedido nº ${info.number} cancelado — ${info.restaurantName}`,
+      this.h('Pedido cancelado') +
+        this.p(
+          `Olá ${this.esc(customerName)}, lamentamos — o teu pedido nº <strong>${info.number}</strong> foi cancelado pelo restaurante.`,
+        ) +
+        this.p(
+          info.storePhone
+            ? `Para esclarecimentos, contacta a ${this.esc(info.restaurantName)}: <strong>${this.esc(info.storePhone)}</strong>.`
+            : `Para esclarecimentos, contacta a ${this.esc(info.restaurantName)}.`,
         ),
     );
   }

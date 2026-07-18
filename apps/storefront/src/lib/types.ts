@@ -13,6 +13,16 @@ export interface Store {
   deliveryFee: string;
   minOrderValue: string;
   isOpen: boolean;
+  reservationsEnabled: boolean;
+  // Só vêm no payload quando `reservationsEnabled` — a API não publica o contacto e a morada de
+  // quem não usa reservas. Opcionais de propósito: o typecheck obriga a tratar a ausência.
+  phone?: string | null;
+  address?: string | null;
+  zipCode?: string | null;
+  reservationMaxPartySize?: number;
+  reservationMaxAdvanceDays?: number;
+  /** Tolerância de atraso, em minutos: «A tua mesa fica guardada X minutos». */
+  reservationGraceMin?: number;
 }
 
 export interface Modifier {

@@ -18,6 +18,10 @@ export class HealthController {
     } catch {
       db = 'down';
     }
+    // O estado do Turnstile NÃO vive aqui: o /health é @Public() e publicar `enforced` (ou o
+    // `consecutiveFailures` a subir) seria um oráculo em tempo real a dizer a um atacante quando
+    // o endpoint que auto-confirma mesas está sem proteção. O painel lê-o autenticado, em
+    // GET /reservations/turnstile-status.
     return { status: 'ok', db, timestamp: new Date().toISOString() };
   }
 }

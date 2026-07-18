@@ -44,18 +44,34 @@ function serverError(e: any, fallback: string): string {
 export function ReservationFormModal({
   mode,
   reservation,
+  initial,
   onClose,
 }: {
   mode: 'create' | 'edit';
   reservation?: Reservation;
+  /**
+   * Pré-preenchimento vindo do mapa de sala: a mesa tocada e a hora do cursor.
+   *
+   * Só conta em `mode: 'create'` — em edição manda sempre a reserva. Cada chave é opcional e
+   * cai no valor de sempre (hoje / agora / mesa automática) quando falta.
+   *
+   * Isto é estado INICIAL, não controlado: um `initial` novo só pega se o modal for montado de
+   * novo. Quem o abre desmonta-o entre aberturas (o `{modal && …}` da página), que é o caso —
+   * se algum dia passar a ficar montado, isto precisa de uma `key`.
+   */
+  initial?: { date?: string; time?: string; tableIds?: string[] };
   onClose: () => void;
 }): JSX.Element {
   const tables = useTables();
   const createReservation = useCreateReservation();
   const updateReservation = useUpdateReservation();
 
-  const [date, setDate] = useState(reservation ? localDate(reservation.startsAt) : todayISO());
-  const [time, setTime] = useState(reservation ? localTime(reservation.startsAt) : nowHHMM());
+  const [date, setDate] = useState(
+    reservation ? localDate(reservation.startsAt) : (initial?.date ?? todayISO()),
+  );
+  const [time, setTime] = useState(
+    reservation ? localTime(reservation.startsAt) : (initial?.time ?? nowHHMM()),
+  );
   const [partySize, setPartySize] = useState(String(reservation?.partySize ?? 2));
   const [durationMin, setDurationMin] = useState(
     reservation ? String(minutesBetween(reservation.startsAt, reservation.endsAt)) : '',
@@ -65,7 +81,7 @@ export function ReservationFormModal({
   const [customerEmail, setCustomerEmail] = useState(reservation?.customerEmail ?? '');
   const [notes, setNotes] = useState(reservation?.notes ?? '');
   const [tableIds, setTableIds] = useState<string[]>(
-    reservation ? reservation.tables.map((t) => t.tableId) : [],
+    reservation ? reservation.tables.map((t) => t.tableId) : (initial?.tableIds ?? []),
   );
   const [saving, setSaving] = useState(false);
 

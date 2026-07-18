@@ -10,6 +10,8 @@ import type {
   Reservation,
   Table,
   ReservationWindow,
+  ReservationService,
+  ServiceForDay,
   ReservationBlock,
   ReservationConfig,
 } from './reservation-types';
@@ -110,6 +112,27 @@ export function useDeleteTable() {
   });
 }
 
+/**
+ * Grava o layout do mapa de uma área INTEIRA.
+ *
+ * As `positions` levam TODAS as mesas da área, não só as que se arrastaram: se levassem só as
+ * duas de uma troca, o auto-layout das restantes nunca ficaria gravado e dois dispositivos
+ * veriam salas diferentes até alguém arrastar. O servidor grava-as numa transação.
+ *
+ * `area: null` é a área «Sem área» (mesas com `area = null`) — e é um valor a sério, não um
+ * «não filtrar»: o servidor recusa com 404 uma mesa que não seja daquela área.
+ */
+export function useSetLayout() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: {
+      area: string | null;
+      positions: { id: string; x: number; y: number }[];
+    }) => (await api.put<{ saved: number }>('/tables/layout', body)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['tables'] }),
+  });
+}
+
 // ==========================================================================
 // Reservas (painel)
 // ==========================================================================
@@ -144,6 +167,8 @@ export function useUpdateReservationStatus() {
 // ==========================================================================
 // Janelas de reserva
 // ==========================================================================
+// Sucedidas pelos serviços (ver abaixo). A tabela ainda existe no servidor — a R4 é um
+// expand/contract e o DROP fica para um ciclo posterior — mas o painel deixou de as escrever.
 
 export function useWindows() {
   return useQuery({
@@ -158,6 +183,74 @@ export function useSetWindows() {
     mutationFn: async (windows: ReservationWindow[]) =>
       (await api.put<ReservationWindow[]>('/reservation-windows', { windows })).data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['reservation-windows'] }),
+  });
+}
+
+// ==========================================================================
+// Serviços de reserva
+// ==========================================================================
+// A chave ['reservation-services'] é PREFIXO da chave do dia: invalidar o CRUD refaz também
+// os chips e a timeline do dia aberto, que é o que o dono espera depois de gravar um serviço.
+
+export function useServices() {
+  return useQuery({
+    queryKey: ['reservation-services'],
+    queryFn: async () => (await api.get<ReservationService[]>('/reservation-services')).data,
+  });
+}
+
+/**
+ * Os serviços de um dia concreto, com o sintético já resolvido pelo servidor: um dia sem
+ * serviços devolve «Horário de abertura» com `synthetic: true` em vez de uma lista vazia.
+ */
+export function useServicesForDay(dateISO: string) {
+  return useQuery({
+    queryKey: ['reservation-services', 'day', dateISO],
+    queryFn: async () =>
+      (await api.get<ServiceForDay[]>('/reservation-services/day', { params: { date: dateISO } })).data,
+    enabled: !!dateISO,
+  });
+}
+
+export function useCreateService() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: {
+      name: string;
+      weekdays: number[];
+      openMinute: number;
+      closeMinute: number;
+      sortOrder?: number;
+    }) => (await api.post<ReservationService>('/reservation-services', body)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['reservation-services'] }),
+  });
+}
+
+/**
+ * PATCH parcial: uma chave omitida fica como está no servidor.
+ * ⚠️ Cuidado com o `undefined` — o `JSON.stringify` deita a chave fora, logo mandar
+ * `{ name: undefined }` não limpa o nome: mantém o antigo e a UI diz «sucesso». Nenhum campo
+ * do serviço é anulável, portanto manda só o que mudou mesmo.
+ */
+export function useUpdateService() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ...body }: { id: string } & Partial<Omit<ReservationService, 'id'>>) =>
+      (await api.patch<ReservationService>(`/reservation-services/${id}`, body)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['reservation-services'] }),
+  });
+}
+
+/**
+ * Apagar o último serviço de um weekday NÃO fecha o dia: abre-o de par em par, porque o
+ * servidor passa a cair no horário de abertura (−60). Quem chamar isto tem de avisar com a
+ * consequência real ANTES — ver o §5 do spec.
+ */
+export function useDeleteService() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => (await api.delete(`/reservation-services/${id}`)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['reservation-services'] }),
   });
 }
 

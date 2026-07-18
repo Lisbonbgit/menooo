@@ -38,9 +38,15 @@ RUN pnpm --filter @comanda/api prisma:generate \
 ARG NEXT_PUBLIC_API_URL
 ARG NEXT_PUBLIC_STORE_URL
 ARG NEXT_PUBLIC_DASHBOARD_URL
+# A sitekey do Turnstile é BUILD-TIME: o Next inlina-a no bundle do cliente aqui.
+# Pô-la no .env e reiniciar o contentor NÃO a mete no bundle — ficava a API a exigir
+# token e o storefront sem widget para o produzir = 403 em 100% das reservas.
+# Mudar a sitekey obriga a REconstruir a imagem (a secret da API é que é runtime).
+ARG NEXT_PUBLIC_TURNSTILE_SITE_KEY
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_STORE_URL=$NEXT_PUBLIC_STORE_URL
 ENV NEXT_PUBLIC_DASHBOARD_URL=$NEXT_PUBLIC_DASHBOARD_URL
+ENV NEXT_PUBLIC_TURNSTILE_SITE_KEY=$NEXT_PUBLIC_TURNSTILE_SITE_KEY
 ENV NODE_OPTIONS=--max-old-space-size=1536
 RUN pnpm --filter @comanda/storefront build \
  && pnpm --filter @comanda/dashboard build \

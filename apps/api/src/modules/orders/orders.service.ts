@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { OrderStatus, OrderType, PaymentMethod, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreatePublicOrderDto } from './dto/create-order.dto';
@@ -6,6 +6,7 @@ import { OrdersGateway } from './orders.gateway';
 import { computeOpenNow } from '../tenants/open-now.util';
 import { isSubscriptionUsable } from '../tenants/subscription.util';
 import { PromotionsService } from '../promotions/promotions.service';
+import { MailService, OrderMailInfo } from '../mail/mail.service';
 
 // trabalhar em cêntimos evita erros de vírgula flutuante
 const toCents = (v: Prisma.Decimal | number | string) => Math.round(Number(v) * 100);
@@ -28,10 +29,13 @@ const TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
 
 @Injectable()
 export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly gateway: OrdersGateway,
     private readonly promotions: PromotionsService,
+    private readonly mail: MailService,
   ) {}
 
   // ==========================================================================
@@ -232,7 +236,63 @@ export class OrdersService {
     await this.prisma.order.update({ where: { id }, data: { status } });
     const updated = await this.getForTenant(tenantId, id);
     this.gateway.emitOrderUpdated(tenantId, updated);
+    void this.afterStatusChange(updated, status).catch((e) =>
+      this.logger.error(`email de encomenda (${status}) falhou: ${e?.message ?? e}`),
+    );
     return updated;
+  }
+
+  /**
+   * Pós-transição: avisa o cliente por email. Fire-and-forget — o chamador faz `.catch`, aqui
+   * nunca lançamos por causa de um email. Só 4 transições enviam (ACCEPTED/READY/COMPLETED e
+   * REJECTED|CANCELLED); PREPARING e OUT_FOR_DELIVERY são silenciosas (o «em preparação» é dito
+   * no email de aceite). Sem customerEmail (encomendas manuais) → não envia.
+   */
+  private async afterStatusChange(
+    order: Prisma.OrderGetPayload<{ include: { items: { include: { modifiers: true } } } }>,
+    status: OrderStatus,
+  ) {
+    if (!order.customerEmail) return;
+    const dispara =
+      status === OrderStatus.ACCEPTED ||
+      status === OrderStatus.READY ||
+      status === OrderStatus.COMPLETED ||
+      status === OrderStatus.REJECTED ||
+      status === OrderStatus.CANCELLED;
+    if (!dispara) return;
+
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: order.tenantId },
+      select: { name: true, slug: true, phone: true, address: true, city: true },
+    });
+    if (!tenant) return;
+
+    const info: OrderMailInfo = {
+      number: order.number,
+      type: order.type,
+      restaurantName: tenant.name,
+      slug: tenant.slug,
+      storePhone: tenant.phone,
+      storeAddress: [tenant.address, tenant.city].filter(Boolean).join(', ') || null,
+      items: order.items.map((i) => ({
+        name: i.name,
+        quantity: i.quantity,
+        lineTotal: Number(i.total),
+      })),
+      total: Number(order.total),
+    };
+
+    switch (status) {
+      case OrderStatus.ACCEPTED:
+        return this.mail.sendOrderAccepted(order.customerEmail, order.customerName, info);
+      case OrderStatus.READY:
+        return this.mail.sendOrderReady(order.customerEmail, order.customerName, info);
+      case OrderStatus.COMPLETED:
+        return this.mail.sendOrderCompleted(order.customerEmail, order.customerName, info);
+      case OrderStatus.REJECTED:
+      case OrderStatus.CANCELLED:
+        return this.mail.sendOrderCancelled(order.customerEmail, order.customerName, info);
+    }
   }
 
   // ==========================================================================

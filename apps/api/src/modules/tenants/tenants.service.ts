@@ -55,10 +55,29 @@ export class TenantsService {
       // "aberto" efetivo = toggle manual E dentro do horário
       isOpen: computeOpenNow(tenant, openingHours),
       reservationsEnabled: rest.reservationsEnabled,
+      // Contacto e morada SÓ para quem ligou as reservas. O campo "Morada" das Definições nunca
+      // foi publicado até aqui — há donos que lá terão posto a morada de faturação, e publicá-la
+      // para toda a gente por causa de uma funcionalidade que não usam seria uma fuga a sério.
+      // Quem liga o interruptor está a pedir para ser encontrado: aí é intencional (e a página
+      // de reserva precisa — é o cliente que se desloca) . A página de gestão não depende disto:
+      // recebe o `restaurantPhone` do próprio GET /public/reservations/:code.
+      ...(rest.reservationsEnabled
+        ? {
+            phone: rest.phone,
+            address: rest.address,
+            zipCode: rest.zipCode,
+            reservationMaxPartySize: rest.reservationMaxPartySize,
+            reservationMaxAdvanceDays: rest.reservationMaxAdvanceDays,
+            // Tolerância de atraso: é o que a loja promete ao cliente («a tua mesa fica guardada
+            // X minutos»). Vai aqui dentro, com o resto — a API não publica dados de quem não
+            // usa reservas.
+            reservationGraceMin: rest.reservationGraceMin,
+          }
+        : {}),
     };
   }
 
-  /** Lojas publicamente visíveis (para o sitemap): slug + data de atualização. */
+  /** Lojas publicamente visíveis (para o sitemap): slug + data de atualização + flag de reservas. */
   async listPublicStores() {
     const tenants = await this.prisma.tenant.findMany({
       where: { status: 'ACTIVE' },
@@ -67,7 +86,11 @@ export class TenantsService {
     });
     return tenants
       .filter((t) => isSubscriptionUsable(t.account))
-      .map((t) => ({ slug: t.slug, updatedAt: t.updatedAt }));
+      .map((t) => ({
+        slug: t.slug,
+        updatedAt: t.updatedAt,
+        reservationsEnabled: t.reservationsEnabled,
+      }));
   }
 
   /** Indica se a loja aceita encomendas neste momento (usado no checkout). */
@@ -128,6 +151,18 @@ export class TenantsService {
   async updateMine(tenantId: string, dto: UpdateTenantDto) {
     await this.ensure(tenantId);
     const data: Record<string, unknown> = { ...dto };
+
+    // ligar reservas sem mesas publica uma loja partida (30 dias vazios) — spec §11
+    if (dto.reservationsEnabled === true) {
+      const bookable = await this.prisma.table.count({
+        where: { tenantId, active: true, bookableOnline: true },
+      });
+      if (bookable === 0) {
+        throw new BadRequestException(
+          'Cria pelo menos uma mesa reservável online antes de ligar as reservas.',
+        );
+      }
+    }
 
     // cores da montra: normaliza, valida legibilidade; vazio repõe o tema
     for (const field of ['brandColor', 'heroColor'] as const) {
