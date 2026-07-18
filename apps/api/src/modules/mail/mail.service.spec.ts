@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { OrderType } from '@prisma/client';
 import { MailService, type ReservationMailInfo } from './mail.service';
 
 const DIA_MS = 86_400_000;
@@ -160,5 +161,84 @@ describe('MailService — teto por destinatário', () => {
       await svc.sendReservationConfirmed('ana@x.pt', 'Ana', info);
     }
     expect(sendMail).toHaveBeenCalledTimes(15);
+  });
+});
+
+describe('MailService — emails de encomenda', () => {
+  let svc: MailService;
+  let sendMail: jest.SpyInstance;
+
+  const info = (over: Partial<Parameters<MailService['sendOrderAccepted']>[2]> = {}) => ({
+    number: 42,
+    type: OrderType.PICKUP,
+    restaurantName: 'Pizzaria Demo',
+    slug: 'pizzaria-demo',
+    storePhone: '912345678',
+    storeAddress: 'Rua das Flores 1, Lisboa',
+    items: [{ name: 'Margherita', quantity: 2, lineTotal: 17 }],
+    total: 17,
+    ...over,
+  });
+
+  beforeEach(() => {
+    process.env.SMTP_HOST = 'json';
+    jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    svc = new MailService();
+    sendMail = jest
+      .spyOn(
+        (svc as unknown as { transporter: { sendMail: () => Promise<unknown> } }).transporter,
+        'sendMail',
+      )
+      .mockResolvedValue({});
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+    delete process.env.SMTP_HOST;
+  });
+
+  it('os 4 métodos enviam um email cada, com o nº do pedido no assunto', async () => {
+    await svc.sendOrderAccepted('ana@x.pt', 'Ana', info());
+    await svc.sendOrderReady('ana@x.pt', 'Ana', info());
+    await svc.sendOrderCompleted('ana@x.pt', 'Ana', info());
+    await svc.sendOrderCancelled('ana@x.pt', 'Ana', info());
+    expect(sendMail).toHaveBeenCalledTimes(4);
+    for (const call of sendMail.mock.calls) {
+      expect(call[0].subject).toContain('42');
+    }
+  });
+
+  it('READY diz «levantar» num PICKUP e «a caminho» numa DELIVERY', async () => {
+    await svc.sendOrderReady('ana@x.pt', 'Ana', info({ type: OrderType.PICKUP }));
+    const pickupHtml = sendMail.mock.calls[0][0].html as string;
+    expect(pickupHtml.toLowerCase()).toContain('levantar');
+
+    sendMail.mockClear();
+    await svc.sendOrderReady('ana@x.pt', 'Ana', info({ type: OrderType.DELIVERY }));
+    const deliveryHtml = sendMail.mock.calls[0][0].html as string;
+    expect(deliveryHtml.toLowerCase()).toContain('caminho');
+  });
+
+  it('o email de concluído tem o botão "Pedir novamente" com o link da loja', async () => {
+    await svc.sendOrderCompleted('ana@x.pt', 'Ana', info({ slug: 'pizzaria-demo' }));
+    const html = sendMail.mock.calls[0][0].html as string;
+    expect(html).toContain('/pizzaria-demo');
+    expect(html).toContain('Pedir novamente');
+  });
+
+  it('escapa o nome do cliente (anti-injeção no template)', async () => {
+    await svc.sendOrderAccepted('ana@x.pt', '<script>x</script>', info());
+    const html = sendMail.mock.calls[0][0].html as string;
+    expect(html).not.toContain('<script>x</script>');
+    expect(html).toContain('&lt;script&gt;');
+  });
+
+  it('NÃO têm teto por destinatário: 8 emails ao mesmo cliente saem os 8', async () => {
+    for (let i = 0; i < 8; i++) {
+      await svc.sendOrderAccepted('ana@x.pt', 'Ana', info());
+    }
+    expect(sendMail).toHaveBeenCalledTimes(8); // contraste: reservas cortam ao 5.º
   });
 });

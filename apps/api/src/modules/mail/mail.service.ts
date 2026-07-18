@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
+import { OrderType } from '@prisma/client';
 
 // URLs públicas (mesmas envs do billing)
 const DASHBOARD_URL = () => process.env.DASHBOARD_URL ?? 'https://painel.menooo.com';
@@ -29,6 +30,18 @@ export interface ReservationMailInfo {
    * mesa.
    */
   graceMin?: number;
+}
+
+/** Dados de uma encomenda usados nos templates de email (Fase de emails de encomenda). */
+export interface OrderMailInfo {
+  number: number;
+  type: OrderType;
+  restaurantName: string;
+  slug: string;
+  storePhone?: string | null;
+  storeAddress?: string | null;
+  items: { name: string; quantity: number; lineTotal: number }[];
+  total: number;
 }
 
 /**
@@ -172,6 +185,23 @@ export class MailService {
   private graceLine(graceMin?: number): string {
     if (!graceMin || graceMin <= 0) return '';
     return this.p(`A tua mesa fica guardada ${graceMin} ${graceMin === 1 ? 'minuto' : 'minutos'}.`);
+  }
+
+  /** Formata euros em pt-PT: 17 → "17,00 €". */
+  private money(v: number): string {
+    return `${v.toFixed(2).replace('.', ',')} €`;
+  }
+
+  /** Tabela simples dos itens da encomenda (HTML inline, sem estilos externos). */
+  private orderItems(items: OrderMailInfo['items']): string {
+    const rows = items
+      .map(
+        (i) =>
+          `<tr><td style="padding:4px 0;color:#2B211A;font-size:14px;font-family:Arial,Helvetica,sans-serif;">${i.quantity}× ${this.esc(i.name)}</td>` +
+          `<td style="padding:4px 0;color:#2B211A;font-size:14px;font-family:Arial,Helvetica,sans-serif;text-align:right;white-space:nowrap;">${this.money(i.lineTotal)}</td></tr>`,
+      )
+      .join('');
+    return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:8px 0 14px;border-top:1px dashed #EBE1D3;border-bottom:1px dashed #EBE1D3;">${rows}</table>`;
   }
 
   // ==========================================================================
@@ -402,6 +432,72 @@ export class MailService {
         ) +
         this.p(
           `${this.pax(info.partySize)} · ${info.dateText} às ${info.timeText} · ${this.tableLabel(info.tableNames)}`,
+        ),
+    );
+  }
+
+  // ==========================================================================
+  // Emails de encomenda (estado mudado pelo restaurante — SEM teto por destinatário)
+  // ==========================================================================
+
+  async sendOrderAccepted(to: string, customerName: string, info: OrderMailInfo) {
+    await this.send(
+      to,
+      `Pedido nº ${info.number} aceite — ${this.esc(info.restaurantName)}`,
+      this.h('Pedido aceite!') +
+        this.p(
+          `Olá ${this.esc(customerName)}, o teu pedido nº <strong>${info.number}</strong> foi aceite e está em preparação.`,
+        ) +
+        this.p('Avisamos-te por email assim que estiver pronto.') +
+        this.orderItems(info.items) +
+        this.p(`Total: <strong>${this.money(info.total)}</strong>`),
+    );
+  }
+
+  async sendOrderReady(to: string, customerName: string, info: OrderMailInfo) {
+    const corpo =
+      info.type === OrderType.PICKUP
+        ? this.p(
+            `Olá ${this.esc(customerName)}, o teu pedido nº <strong>${info.number}</strong> está pronto para levantares!`,
+          ) +
+          (info.storeAddress
+            ? this.p(`Levanta em: <strong>${this.esc(info.storeAddress)}</strong>`)
+            : '')
+        : this.p(
+            `Olá ${this.esc(customerName)}, o teu pedido nº <strong>${info.number}</strong> está pronto e vai a caminho!`,
+          );
+    await this.send(
+      to,
+      `Pedido nº ${info.number} pronto — ${this.esc(info.restaurantName)}`,
+      this.h('O teu pedido está pronto!') + corpo,
+    );
+  }
+
+  async sendOrderCompleted(to: string, customerName: string, info: OrderMailInfo) {
+    await this.send(
+      to,
+      `Obrigado! Pedido nº ${info.number} — ${this.esc(info.restaurantName)}`,
+      this.h('Bom apetite!') +
+        this.p(
+          `Olá ${this.esc(customerName)}, obrigado pela tua encomenda na <strong>${this.esc(info.restaurantName)}</strong>.`,
+        ) +
+        this.p('Esperamos que gostes. Quando quiseres repetir, é a um clique de distância.') +
+        this.cta('Pedir novamente', `${STORE_URL()}/${info.slug}`),
+    );
+  }
+
+  async sendOrderCancelled(to: string, customerName: string, info: OrderMailInfo) {
+    await this.send(
+      to,
+      `Pedido nº ${info.number} cancelado — ${this.esc(info.restaurantName)}`,
+      this.h('Pedido cancelado') +
+        this.p(
+          `Olá ${this.esc(customerName)}, lamentamos — o teu pedido nº <strong>${info.number}</strong> foi cancelado pelo restaurante.`,
+        ) +
+        this.p(
+          info.storePhone
+            ? `Para esclarecimentos, contacta a ${this.esc(info.restaurantName)}: <strong>${this.esc(info.storePhone)}</strong>.`
+            : `Para esclarecimentos, contacta a ${this.esc(info.restaurantName)}.`,
         ),
     );
   }
