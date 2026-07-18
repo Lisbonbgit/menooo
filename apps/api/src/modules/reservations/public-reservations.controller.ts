@@ -2,7 +2,12 @@ import { Body, Controller, Get, Headers, Ip, Param, Post, Query } from '@nestjs/
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { ReservationsService } from './reservations.service';
-import { CancelReservationDto, CreatePublicReservationDto } from './dto/public-reservation.dto';
+import {
+  CancelByEmailDto,
+  CancelReservationDto,
+  CreatePublicReservationDto,
+  LookupReservationDto,
+} from './dto/public-reservation.dto';
 import { Public } from '../../common/decorators/public.decorator';
 
 @ApiTags('public')
@@ -37,6 +42,27 @@ export class PublicReservationsController {
   @Post('stores/:slug/reservations')
   create(@Param('slug') slug: string, @Body() dto: CreatePublicReservationDto, @Ip() ip: string) {
     return this.reservations.createPublic(slug, dto, ip);
+  }
+
+  /**
+   * Consulta por número + email (caminho paralelo ao token, para quem perdeu o email de gestão).
+   * Declarada ANTES das rotas `reservations/:code`: hoje o `GET reservations/:code` é outro método,
+   * mas se algum dia surgir um `POST reservations/:code`, o Nest resolveria `lookup` como `:code`.
+   * A ordem protege contra isso.
+   */
+  @Public()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post('reservations/lookup')
+  lookup(@Body() dto: LookupReservationDto) {
+    return this.reservations.publicByEmail(dto.code, dto.email);
+  }
+
+  /** Cancela por número + email — mesma prova de identidade do lookup, revalidada a cada pedido. */
+  @Public()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post('reservations/:code/cancel-by-email')
+  cancelByEmail(@Param('code') code: string, @Body() dto: CancelByEmailDto) {
+    return this.reservations.cancelByEmail(code, dto.email);
   }
 
   /** Consulta uma reserva pelo código — token SEMPRE por header, nunca em query. */

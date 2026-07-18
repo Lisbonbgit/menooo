@@ -166,11 +166,24 @@ async function publicPost(date, time, partySize, extra, contactPrefix) {
   return res;
 }
 
-async function manualBook(ownerToken, { date, time, partySize, tableIds, customerName, notes }) {
+async function manualBook(ownerToken, { date, time, partySize, tableIds, customerName, notes, customerEmail }) {
   return req('POST', '/reservations', {
     token: ownerToken,
-    body: { date, time, partySize, customerName: customerName ?? 'Bloqueio Manual', customerPhone: '910000000', tableIds, notes },
+    // customerEmail é opcional no DTO manual: `undefined` sai do JSON.stringify e o backend grava
+    // contactEmailKey null (reserva manual sem email). Passar um email real é o que arma o teste
+    // do guard das manuais (email CERTO mas cancelTokenHash null → 404).
+    body: { date, time, partySize, customerName: customerName ?? 'Bloqueio Manual', customerPhone: '910000000', customerEmail, tableIds, notes },
   });
+}
+
+// Caminho por número + email (Tasks 1 e 2). Ambos @Post → sucesso devolve 201 (default do Nest,
+// como o cancel por token no ponto 14), não 200. Baldes de throttle SEPARADOS por handler:
+// lookup 5/min, cancel-by-email 5/min (independentes entre si e do POST público).
+async function lookup(code, email) {
+  return req('POST', '/public/reservations/lookup', { body: { code, email } });
+}
+async function cancelByEmail(code, email) {
+  return req('POST', `/public/reservations/${encodeURIComponent(code)}/cancel-by-email`, { body: { email } });
 }
 
 async function reservationIdByCode(ownerToken, date, code) {
@@ -1072,6 +1085,134 @@ async function main() {
     const storeOff = await req('GET', `/public/stores/${SLUG}`);
     check('GET /public/stores/:slug (reservas OFF) 200', storeOff.status === 200, `got ${storeOff.status}`);
     check('reservationGraceMin AUSENTE com reservas desligadas', !('reservationGraceMin' in (storeOff.json ?? {})), JSON.stringify(storeOff.json));
+
+    // #########################################################################
+    // 32. Consultar/cancelar por NÚMERO + EMAIL (Tasks 1 e 2)
+    //
+    // O coração é a segurança do authorizeByEmail:
+    //  - as reservas MANUAIS (sem cancelTokenHash) ficam FORA do self-service, mesmo com o email
+    //    CERTO — o guard cancelTokenHash!=null corre ANTES do match de email;
+    //  - resposta NEUTRA (404 idêntico) para código inexistente, email errado, manual e TTL;
+    //  - código normalizado para MAIÚSCULAS (o cliente escreve à mão).
+    //
+    // Baldes de throttle SEPARADOS por handler (lookup 5/min, cancel-by-email 5/min). Ambos
+    // arrancam LIMPOS aqui (nenhum ponto anterior lhes toca). A sonda do throttle corre primeiro
+    // (balde limpo garantido) e serve TAMBÉM de linha-de-base "código inexistente → 404" para a
+    // prova de neutralidade; depois um sleep de 61s limpa o balde para os lookups funcionais.
+    // #########################################################################
+    console.log('— 32. consultar/cancelar por número + email');
+
+    // Os pontos 30-31 deixaram as reservas DESLIGADAS. Religar (há mesas reserváveis).
+    const lkEnable = await req('PATCH', '/tenants/me', { token: ownerToken, body: { reservationsEnabled: true } });
+    check('32: religar reservas p/ o caminho por email → 200', lkEnable.status === 200, `got ${lkEnable.status} ${JSON.stringify(lkEnable.json)}`);
+
+    // Datas do MESMO weekday de DATE_A (serviço 12:00–22:00, alargado no ponto 22) e ainda dentro
+    // do maxAdvance=90 — isoladas de tudo o que correu acima.
+    const DATE_LK = addDaysISO(TODAY, 78); // onl + prova do "slot volta a ficar livre"
+    const DATE_LK2 = addDaysISO(TODAY, 85); // ttl + manual
+    check('32: DATE_LK é do mesmo weekday de DATE_A', weekdayOf(DATE_LK) === WEEKDAY && weekdayOf(DATE_LK2) === WEEKDAY, `${weekdayOf(DATE_LK)}/${weekdayOf(DATE_LK2)} vs ${WEEKDAY}`);
+
+    const EMAIL_ONL = `lookup-${RUN}@teste.pt`;
+    const EMAIL_MAN = `manual-lk-${RUN}@teste.pt`;
+    const EMAIL_TTL = `ttl-lk-${RUN}@teste.pt`;
+    const EMAIL_WRONG = `errado-${RUN}@teste.pt`;
+
+    // Enche M2b+M4+M8 às 12:00 em DATE_LK → a reserva online party=2 só pode cair na M2. Assim,
+    // depois de cancelar a online, a M2 liberta-se e o 12:00 REAPARECE (prova nítida, como no p14).
+    const lkPre1 = await manualBook(ownerToken, { date: DATE_LK, time: '12:00', partySize: 10, tableIds: [m2bId, m4Id], customerName: 'Bloqueio LK 1' });
+    const lkPre2 = await manualBook(ownerToken, { date: DATE_LK, time: '12:00', partySize: 10, tableIds: [m8Id], customerName: 'Bloqueio LK 2' });
+    check('32: pré-bloqueio M2b+M4 (manual) 201', lkPre1.status === 201, `got ${lkPre1.status} ${JSON.stringify(lkPre1.json)}`);
+    check('32: pré-bloqueio M8 (manual) 201', lkPre2.status === 201, `got ${lkPre2.status} ${JSON.stringify(lkPre2.json)}`);
+
+    // Reserva ONLINE (cancelTokenHash != null) com email conhecido → cai na M2.
+    const onl = await publicPost(DATE_LK, '12:00', 2, { customerEmail: EMAIL_ONL }, 'lk-onl');
+    check('32: reserva ONLINE criada 201', onl.status === 201, `got ${onl.status} ${JSON.stringify(onl.json)}`);
+    check('32: online ficou na M2', JSON.stringify(onl.json?.tableNames) === JSON.stringify(['M2']), JSON.stringify(onl.json?.tableNames));
+
+    // Reserva ONLINE para o TTL (data fresca → há mesas livres) e depois empurrada 30h para o passado.
+    const ttlRes = await publicPost(DATE_LK2, '12:00', 2, { customerEmail: EMAIL_TTL }, 'lk-ttl');
+    check('32: reserva ONLINE p/ TTL criada 201', ttlRes.status === 201, `got ${ttlRes.status} ${JSON.stringify(ttlRes.json)}`);
+    await prisma.reservation.update({
+      where: { code: ttlRes.json.code },
+      data: { startsAt: new Date(Date.now() - 30 * 3_600_000), endsAt: new Date(Date.now() - 28 * 3_600_000) },
+    });
+
+    // Reserva MANUAL com o email CERTO (contactEmailKey preenchido, mas cancelTokenHash null).
+    const man = await manualBook(ownerToken, { date: DATE_LK2, time: '15:00', partySize: 2, customerName: 'Reserva Manual VIP', customerEmail: EMAIL_MAN });
+    check('32: reserva MANUAL (com email) criada 201', man.status === 201, `got ${man.status} ${JSON.stringify(man.json)}`);
+
+    // ---- sonda do throttle do lookup (balde limpo): 5×404 e o 6.º → 429 ----
+    // Código inexistente → o 1.º 404 é a linha-de-base da neutralidade.
+    const probeStatuses = [];
+    let neutralBaseline = null;
+    for (let i = 1; i <= 6; i++) {
+      const r = await lookup('ZZZZZZ', `probe-${RUN}@teste.pt`);
+      probeStatuses.push(r.status);
+      if (i === 1) neutralBaseline = JSON.stringify(r.json);
+    }
+    check(
+      '32: lookup — 5 primeiros (código inexistente) → 404, 6.º → 429 (throttle 5/min)',
+      probeStatuses.slice(0, 5).every((s) => s === 404) && probeStatuses[5] === 429,
+      `got ${JSON.stringify(probeStatuses)}`,
+    );
+
+    console.log('    … pacing: sleep 61s (limpar o balde do lookup antes dos casos funcionais)');
+    await sleep(61_000);
+
+    // ---- lookups funcionais (balde fresco, exatamente 5) ----
+    const lkOk = await lookup(onl.json.code, EMAIL_ONL);
+    check('32: lookup online + email certo → 201', lkOk.status === 201, `got ${lkOk.status} ${JSON.stringify(lkOk.json)}`);
+    check('32: lookup devolve o code e status CONFIRMED', lkOk.json?.code === onl.json.code && lkOk.json?.status === 'CONFIRMED', JSON.stringify(lkOk.json));
+    check('32: lookup mantém tableNames (M2)', JSON.stringify(lkOk.json?.tableNames) === JSON.stringify(['M2']), JSON.stringify(lkOk.json?.tableNames));
+
+    // O GUARD DAS MANUAIS: email CERTO mas reserva manual → 404 (não é o email a bloquear).
+    const lkMan = await lookup(man.json.code, EMAIL_MAN);
+    check('32: lookup MANUAL + email CERTO → 404 (manual fora do self-service)', lkMan.status === 404, `got ${lkMan.status} ${JSON.stringify(lkMan.json)}`);
+
+    // Email errado → 404 IDÊNTICO ao de código inexistente (resposta neutra).
+    const lkWrong = await lookup(onl.json.code, EMAIL_WRONG);
+    check('32: lookup email errado → 404', lkWrong.status === 404, `got ${lkWrong.status} ${JSON.stringify(lkWrong.json)}`);
+    check(
+      '32: 404 do email errado é IGUAL ao de código inexistente (neutro)',
+      JSON.stringify(lkWrong.json) === neutralBaseline,
+      `errado=${JSON.stringify(lkWrong.json)} baseline=${neutralBaseline}`,
+    );
+
+    // Código em MINÚSCULAS encontra na mesma (prova o .toUpperCase()).
+    const lkLower = await lookup(onl.json.code.toLowerCase(), EMAIL_ONL);
+    check('32: código em minúsculas encontra na mesma → 201', lkLower.status === 201, `got ${lkLower.status} ${JSON.stringify(lkLower.json)}`);
+    check('32: minúsculas devolve o mesmo code', lkLower.json?.code === onl.json.code, JSON.stringify(lkLower.json?.code));
+
+    // TTL: startsAt + 24h no passado → 404 no lookup.
+    const lkTtl = await lookup(ttlRes.json.code, EMAIL_TTL);
+    check('32: lookup fora do TTL → 404', lkTtl.status === 404, `got ${lkTtl.status} ${JSON.stringify(lkTtl.json)}`);
+
+    // ---- cancel-by-email (balde próprio, 4 chamadas < 5) ----
+    // Email errado → 404 (não cancela).
+    const cxWrong = await cancelByEmail(onl.json.code, EMAIL_WRONG);
+    check('32: cancel-by-email email errado → 404', cxWrong.status === 404, `got ${cxWrong.status} ${JSON.stringify(cxWrong.json)}`);
+    // Manual + email certo → 404 (o guard também protege o cancelar).
+    const cxMan = await cancelByEmail(man.json.code, EMAIL_MAN);
+    check('32: cancel-by-email MANUAL + email certo → 404', cxMan.status === 404, `got ${cxMan.status} ${JSON.stringify(cxMan.json)}`);
+    // TTL → 404 no cancelar também.
+    const cxTtl = await cancelByEmail(ttlRes.json.code, EMAIL_TTL);
+    check('32: cancel-by-email fora do TTL → 404', cxTtl.status === 404, `got ${cxTtl.status} ${JSON.stringify(cxTtl.json)}`);
+
+    // 12:00 ausente ANTES de cancelar (M2 por onl, M2b/M4/M8 pelos manuais).
+    const beforeCx = await slotsSafe(DATE_LK, 2);
+    check('32: 12:00 ausente antes de cancelar (todas as mesas online cheias)', !beforeCx.json?.slots?.includes('12:00'), JSON.stringify(beforeCx.json?.slots));
+
+    // Cancelar por email com o email CERTO → 201 (default do Nest p/ @Post, como o p14).
+    const cxOk = await cancelByEmail(onl.json.code, EMAIL_ONL);
+    check('32: cancelar por email (email certo) → 201', cxOk.status === 201, `got ${cxOk.status} ${JSON.stringify(cxOk.json)}`);
+
+    // Efeitos idênticos ao caminho do token (doCancel partilhado): estado + cancelledBy + slot livre.
+    const panelLk = await req('GET', `/reservations?date=${DATE_LK}`, { token: ownerToken });
+    const onlRow = panelLk.json?.find((x) => x.code === onl.json.code);
+    check('32: reserva cancelada com cancelledBy=CUSTOMER', onlRow?.status === 'CANCELLED' && onlRow?.cancelledBy === 'CUSTOMER', JSON.stringify({ status: onlRow?.status, by: onlRow?.cancelledBy }));
+    const afterCx = await slotsSafe(DATE_LK, 2);
+    check('32: 12:00 REAPARECE após cancelar por email (M2 livre)', afterCx.json?.slots?.includes('12:00'), JSON.stringify(afterCx.json?.slots));
+
   } catch (e) {
     console.error('erro fatal durante os testes:', e);
     failed++;

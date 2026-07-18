@@ -28,3 +28,14 @@ export class CreatePublicReservationDto {
 export class CancelReservationDto {
   @IsString() @IsNotEmpty() @MaxLength(128) token!: string;
 }
+
+// Consultar/cancelar por número + email (caminho paralelo ao token). O
+// forbidNonWhitelisted do main.ts obriga a declarar cada campo.
+export class LookupReservationDto {
+  @IsString() @IsNotEmpty() @MaxLength(20) code!: string; // o código é curto (base32 6)
+  @IsEmail() @MaxLength(200) email!: string;
+}
+
+export class CancelByEmailDto {
+  @IsEmail() @MaxLength(200) email!: string;
+}

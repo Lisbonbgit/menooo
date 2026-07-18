@@ -19,6 +19,7 @@ import { useStore } from '@/lib/store-hooks';
 import { useReservationDays, useReservationSlots } from '@/lib/reservation-public-hooks';
 import { AddressMap } from '@/components/AddressMap';
 import { StoreTheme } from '@/components/StoreTheme';
+import { ManageReservationBlock } from './ManageReservationBlock';
 
 const inputCls =
   'w-full rounded-xl border border-line bg-white px-3.5 py-2.5 text-[14px] shadow-card outline-none transition-colors focus:border-brand';
@@ -346,32 +347,37 @@ export function ReservarClient({ slug }: { slug: string }) {
 
   if (gated) {
     return (
-      <main className="flex min-h-screen items-center justify-center px-4">
+      <main className="flex min-h-screen items-center justify-center px-4 py-10">
         <StoreTheme brandColor={s.brandColor} heroColor={s.heroColor} />
-        <div className="w-full max-w-sm rounded-3xl border border-line bg-white p-8 text-center shadow-card">
-          <CalendarDays size={28} strokeWidth={1.5} className="mx-auto text-ink-mute" />
-          <h1 className="mt-3 font-display text-[21px] font-semibold">
-            Reservas online indisponíveis
-          </h1>
-          <p className="mt-2 text-[13.5px] leading-relaxed text-ink-soft">
-            As reservas online d{'’'}
-            {s.name} estão temporariamente indisponíveis.
-            {s.phone ? ' Liga-nos para marcares a tua mesa.' : ''}
-          </p>
-          {s.phone && (
-            <a
-              href={`tel:${s.phone}`}
-              className="mt-5 flex items-center justify-center gap-2 rounded-xl bg-brand py-3 text-[14px] font-semibold text-white shadow-card transition-colors hover:bg-brand-dark"
+        {/* O bloco de gestão vive AQUI de propósito: com as reservas desligadas é justamente
+            quando o cliente vem cancelar/consultar. Depende só do slug, não do estado da loja. */}
+        <div className="w-full max-w-sm">
+          <div className="rounded-3xl border border-line bg-white p-8 text-center shadow-card">
+            <CalendarDays size={28} strokeWidth={1.5} className="mx-auto text-ink-mute" />
+            <h1 className="mt-3 font-display text-[21px] font-semibold">
+              Reservas online indisponíveis
+            </h1>
+            <p className="mt-2 text-[13.5px] leading-relaxed text-ink-soft">
+              As reservas online d{'’'}
+              {s.name} estão temporariamente indisponíveis.
+              {s.phone ? ' Liga-nos para marcares a tua mesa.' : ''}
+            </p>
+            {s.phone && (
+              <a
+                href={`tel:${s.phone}`}
+                className="mt-5 flex items-center justify-center gap-2 rounded-xl bg-brand py-3 text-[14px] font-semibold text-white shadow-card transition-colors hover:bg-brand-dark"
+              >
+                <Phone size={15} /> {s.phone}
+              </a>
+            )}
+            <Link
+              href={`/${slug}`}
+              className="mt-2.5 block rounded-xl border border-line py-3 text-[13.5px] font-medium text-ink-soft transition-colors hover:bg-cream"
             >
-              <Phone size={15} /> {s.phone}
-            </a>
-          )}
-          <Link
-            href={`/${slug}`}
-            className="mt-2.5 block rounded-xl border border-line py-3 text-[13.5px] font-medium text-ink-soft transition-colors hover:bg-cream"
-          >
-            Ver o menu da loja
-          </Link>
+              Ver o menu da loja
+            </Link>
+          </div>
+          <ManageReservationBlock slug={slug} />
         </div>
       </main>
     );
@@ -751,6 +757,9 @@ export function ReservarClient({ slug }: { slug: string }) {
           </button>
         </div>
       </form>
+
+      {/* Consultar/cancelar uma reserva já feita — mesmo bloco do ramo `gated`. */}
+      <ManageReservationBlock slug={slug} />
     </main>
   );
 }

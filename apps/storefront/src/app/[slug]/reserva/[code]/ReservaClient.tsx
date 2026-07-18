@@ -12,41 +12,13 @@ import { useEffect, useLayoutEffect, useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import {
-  ArrowLeft,
-  CalendarDays,
-  CalendarX2,
-  CheckCircle2,
-  Clock,
-  Loader2,
-  MapPin,
-  Phone,
-  Users,
-} from 'lucide-react';
+import { ArrowLeft, CalendarX2, Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useStore } from '@/lib/store-hooks';
 import { StoreTheme } from '@/components/StoreTheme';
+import { ContactLine, ReservationCard } from '@/components/ReservationCard';
+import type { PublicReservation } from '@/lib/reservation-public-hooks';
 import type { Store } from '@/lib/types';
-
-type ReservationStatus = 'CONFIRMED' | 'CANCELLED' | 'COMPLETED' | 'NO_SHOW';
-
-interface PublicReservation {
-  code: string;
-  status: ReservationStatus;
-  /** yyyy-mm-dd JÁ na timezone do restaurante — não voltar a converter no cliente. */
-  date: string;
-  /** hh:mm, idem. */
-  time: string;
-  startsAt: string;
-  endsAt: string;
-  partySize: number;
-  /** NUNCA renderizar. O R4 existe para o dono ARRASTAR reservas entre mesas; consolidar
-   *  «Mesa 7» num ecrã que o cliente guarda cria quem chega e exige a Mesa 7 depois de ter
-   *  sido movido. Fica no contrato (remover era breaking) — é só não o mostrar. */
-  tableNames: string[];
-  restaurantName: string;
-  restaurantPhone: string | null;
-}
 
 /** O sessionStorage atira em contextos com armazenamento bloqueado (iframe de terceiros,
  *  modos privados antigos). Um erro aqui deixava sem reserva quem tem o link certo na mão. */
@@ -80,25 +52,6 @@ function errorText(err: unknown, fallback: string): string {
     ?.message;
   return typeof msg === 'string' ? msg : fallback;
 }
-
-/** «Sábado, 19 de julho» a partir do yyyy-mm-dd que o servidor já normalizou. */
-function dateLabel(iso: string): string {
-  const d = new Date(`${iso}T00:00:00`); // meia-noite LOCAL: só lemos as partes da data
-  if (Number.isNaN(d.getTime())) return iso;
-  const t = new Intl.DateTimeFormat('pt-PT', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  }).format(d);
-  return t.charAt(0).toUpperCase() + t.slice(1);
-}
-
-const STATUS_META: Record<ReservationStatus, { label: string; className: string }> = {
-  CONFIRMED: { label: 'Confirmada', className: 'bg-green-100 text-green-700' },
-  CANCELLED: { label: 'Cancelada', className: 'bg-red-50 text-red-700' },
-  COMPLETED: { label: 'Concluída', className: 'bg-cream text-ink-soft' },
-  NO_SHOW: { label: 'Registada como falta', className: 'bg-cream text-ink-soft' },
-};
 
 export function ReservaClient({ slug, code }: { slug: string; code: string }) {
   // Ler o fragmento e guardá-lo SÍNCRONAMENTE, antes de qualquer efeito: o sessionStorage é o
@@ -236,7 +189,6 @@ export function ReservaClient({ slug, code }: { slug: string; code: string }) {
     );
   }
 
-  const meta = STATUS_META[r.status] ?? STATUS_META.CONFIRMED;
   // Esconder o botão quando o estado não permite — o servidor recusa na mesma, mas um botão
   // que só serve para dar erro é uma promessa falsa. Cancelar vale até ao FIM da reserva
   // (endsAt): um cancelamento tardio é sempre melhor para o dono que um no-show mudo.
@@ -247,105 +199,21 @@ export function ReservaClient({ slug, code }: { slug: string; code: string }) {
 
   return (
     <Shell s={s} slug={slug}>
-      <h1 className="mb-5 font-display text-[28px] font-semibold tracking-tight">A minha reserva</h1>
-
-      <div className="animate-fade-up overflow-hidden rounded-2xl border border-line bg-white shadow-card">
-        <div className="border-b border-line bg-cream/40 px-5 py-4 text-center">
-          <span
-            className={
-              'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[12px] font-semibold ' +
-              meta.className
-            }
-          >
-            {r.status === 'CONFIRMED' && <CheckCircle2 size={13} />}
-            {meta.label}
-          </span>
-          <p className="mt-3 font-mono text-[26px] font-semibold tracking-[0.18em]">{r.code}</p>
-          <p className="text-[11.5px] uppercase tracking-[0.16em] text-ink-mute">
-            Código da reserva
-          </p>
-        </div>
-
-        <div className="space-y-3 px-5 py-5">
-          <InfoRow icon={<CalendarDays size={15} />} label="Dia" value={dateLabel(r.date)} />
-          <InfoRow icon={<Clock size={15} />} label="Hora" value={r.time} />
-          <InfoRow
-            icon={<Users size={15} />}
-            label="Pessoas"
-            value={`${r.partySize} ${r.partySize === 1 ? 'pessoa' : 'pessoas'}`}
-          />
-          <InfoRow
-            icon={<MapPin size={15} />}
-            label={r.restaurantName}
-            // a morada vem da loja, não da reserva: enquanto esse pedido não chega mostramos
-            // um traço em vez do beco «vê na página da loja», que depois saltava para a morada
-            value={morada || (store.isLoading ? '—' : 'Vê a morada na página da loja')}
-          />
-        </div>
-      </div>
-
-      {/* Tolerância de atraso. Vem da loja (`useStore`), não da reserva: só sai com valor, porque
-          o campo é gated por `reservationsEnabled` (o dono pode ter desligado as reservas depois
-          desta ficar marcada) e pode ser 0. Inventar 15 seria prometer o que o restaurante não
-          disse. A linha de contacto aqui em baixo cobre o resto. */}
-      {r.status === 'CONFIRMED' && !!s?.reservationGraceMin && (
-        <p className="mt-4 rounded-xl bg-cream/60 px-4 py-3 text-[12.5px] leading-relaxed text-ink-soft">
-          A tua mesa fica guardada {s.reservationGraceMin}{' '}
-          {s.reservationGraceMin === 1 ? 'minuto' : 'minutos'}.
-        </p>
-      )}
-
-      {r.status === 'CANCELLED' && (
-        <div className="mt-4 rounded-xl bg-cream/60 px-4 py-3 text-[12.5px] leading-relaxed text-ink-soft">
-          Esta reserva foi cancelada e a mesa ficou livre.
-          {s?.reservationsEnabled && (
-            <>
-              {' '}
-              <Link href={`/${slug}/reservar`} className="font-semibold text-brand hover:underline">
-                Marcar outra
-              </Link>
-              .
-            </>
-          )}
-        </div>
-      )}
-
-      <div className="mt-5 rounded-xl border border-line bg-white px-4 py-3.5 text-[12.5px] leading-relaxed text-ink-soft shadow-card">
-        <ContactLine slug={slug} phone={phone} prefix="Se não conseguires vir, liga-nos:" flush />
-      </div>
-
-      {canCancel &&
-        (confirming ? (
-          <div className="animate-fade-up mt-5 rounded-xl border border-line bg-white p-4 text-center shadow-card">
-            <p className="text-[13.5px] font-medium">Queres mesmo cancelar esta reserva?</p>
-            <p className="mt-1 text-[12.5px] text-ink-soft">
-              A mesa fica livre para outra pessoa e não dá para desfazer.
-            </p>
-            <div className="mt-4 flex gap-2.5">
-              <button
-                onClick={() => setConfirming(false)}
-                disabled={cancel.isPending}
-                className="flex-1 rounded-xl border border-line bg-white py-2.5 text-[13.5px] font-medium text-ink-soft transition-colors hover:bg-cream disabled:opacity-50"
-              >
-                Manter reserva
-              </button>
-              <button
-                onClick={() => cancel.mutate()}
-                disabled={cancel.isPending}
-                className="flex-1 rounded-xl bg-red-600 py-2.5 text-[13.5px] font-semibold text-white shadow-card transition-colors hover:bg-red-700 disabled:opacity-50"
-              >
-                {cancel.isPending ? 'A cancelar…' : 'Sim, cancelar'}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <button
-            onClick={() => setConfirming(true)}
-            className="mt-5 w-full rounded-xl border border-line bg-white py-3 text-[13.5px] font-medium text-ink-soft transition-colors hover:border-red-200 hover:text-red-700"
-          >
-            Cancelar reserva
-          </button>
-        ))}
+      <ReservationCard
+        slug={slug}
+        r={r}
+        phone={phone}
+        canCancel={canCancel}
+        confirming={confirming}
+        onConfirmingChange={setConfirming}
+        onCancel={() => cancel.mutate()}
+        cancelPending={cancel.isPending}
+        // enquanto o pedido da loja não chega mostramos «—» em vez do beco «vê na página da
+        // loja», que depois saltava para a morada
+        morada={morada || (store.isLoading ? '—' : undefined)}
+        graceMin={s?.reservationGraceMin ?? null}
+        reservationsEnabled={s?.reservationsEnabled}
+      />
     </Shell>
   );
 }
@@ -384,65 +252,5 @@ function Card({ children }: { children: React.ReactNode }) {
     <div className="animate-fade-up rounded-2xl border border-line bg-white p-8 text-center shadow-card">
       {children}
     </div>
-  );
-}
-
-function InfoRow({
-  icon,
-  label,
-  value,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="flex items-start gap-3">
-      <span className="mt-0.5 shrink-0 text-ink-mute">{icon}</span>
-      <div className="min-w-0">
-        <p className="text-[11.5px] uppercase tracking-[0.12em] text-ink-mute">{label}</p>
-        <p className="text-[14px] font-medium">{value}</p>
-      </div>
-    </div>
-  );
-}
-
-/** «liga-nos: <telefone>» — com beco de saída quando o restaurante não tem telefone público. */
-function ContactLine({
-  slug,
-  phone,
-  prefix,
-  flush,
-}: {
-  slug: string;
-  phone: string | null;
-  prefix: string;
-  flush?: boolean;
-}) {
-  return (
-    <p className={flush ? '' : 'mt-5 text-[12.5px] leading-relaxed text-ink-soft'}>
-      {phone ? (
-        <>
-          {prefix}{' '}
-          <a
-            href={`tel:${phone.replace(/\s+/g, '')}`}
-            className="inline-flex items-center gap-1 font-semibold text-brand hover:underline"
-          >
-            <Phone size={12} />
-            {phone}
-          </a>
-        </>
-      ) : (
-        // Sem telefone público o `prefix` deixa de fazer sentido («Se não conseguires vir,
-        // liga-nos:» sem número). Texto neutro, que serve os três ramos que usam isto.
-        <>
-          Os contactos do restaurante estão na{' '}
-          <Link href={`/${slug}`} className="font-semibold text-brand hover:underline">
-            página da loja
-          </Link>
-          .
-        </>
-      )}
-    </p>
   );
 }

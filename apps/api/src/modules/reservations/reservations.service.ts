@@ -69,6 +69,12 @@ type ReservationWithTables = Prisma.ReservationGetPayload<{
   include: { tables: { include: { table: true } } };
 }>;
 
+/** Reserva com mesas + tenant — a forma que o publicByCode/cancelByToken carregam e que os
+ *  refactors partilhados (publicReservationView/doCancel) recebem. */
+type ReservationWithTablesAndTenant = Prisma.ReservationGetPayload<{
+  include: { tables: { include: { table: true } }; tenant: true };
+}>;
+
 /** Subconjunto do Tenant necessário para emails/manageUrl (aceita tenant "cheio" ou só relação). */
 type TenantForMail = Pick<
   Tenant,
@@ -496,19 +502,13 @@ export class ReservationsService {
     return a.length === b.length && timingSafeEqual(a, b);
   }
 
-  async publicByCode(code: string, token: string | undefined) {
-    const row = await this.prisma.reservation.findUnique({
-      where: { code },
-      include: { tables: { include: { table: true } }, tenant: true },
-    });
-    if (!row || !this.verifyToken(row, token)) throw new NotFoundException('Reserva não encontrada.');
-    // O token expira por TEMPO e não por estado: quem clica no link logo após cancelar
-    // continua a ver "reserva cancelada" em vez de um 404 confuso. Sem isto o cancelToken é
-    // uma credencial bearer ETERNA — cada fuga (email reencaminhado, screenshot, histórico
-    // sincronizado, quiosque) passava de janela a permanente.
-    if (row.startsAt.getTime() + 24 * 3_600_000 < Date.now()) {
-      throw new NotFoundException('Reserva não encontrada.');
-    }
+  /**
+   * Shape público de uma reserva — o MESMO objeto que o publicByCode devolvia inline (tableNames
+   * incluído; o cliente é que decidiu não o renderizar na R3). Partilhado pelo caminho do token
+   * (publicByCode) e pelo caminho por email (publicByEmail); dropar campos mudaria o contrato de
+   * um endpoint em produção.
+   */
+  private publicReservationView(row: ReservationWithTablesAndTenant) {
     const tz = row.tenant.timezone || 'Europe/Lisbon';
     return {
       code: row.code,
@@ -524,16 +524,29 @@ export class ReservationsService {
     };
   }
 
-  async cancelByToken(code: string, token: string) {
+  async publicByCode(code: string, token: string | undefined) {
     const row = await this.prisma.reservation.findUnique({
       where: { code },
       include: { tables: { include: { table: true } }, tenant: true },
     });
     if (!row || !this.verifyToken(row, token)) throw new NotFoundException('Reserva não encontrada.');
-    // Mesmo TTL do publicByCode — o token não é uma credencial eterna.
+    // O token expira por TEMPO e não por estado: quem clica no link logo após cancelar
+    // continua a ver "reserva cancelada" em vez de um 404 confuso. Sem isto o cancelToken é
+    // uma credencial bearer ETERNA — cada fuga (email reencaminhado, screenshot, histórico
+    // sincronizado, quiosque) passava de janela a permanente.
     if (row.startsAt.getTime() + 24 * 3_600_000 < Date.now()) {
       throw new NotFoundException('Reserva não encontrada.');
     }
+    return this.publicReservationView(row);
+  }
+
+  /**
+   * Mecânica de cancelamento partilhada (token e email): a reserva já vem AUTORIZADA (o chamador
+   * verificou token ou email); aqui só a guarda de estado + a guarda atómica + socket/emails.
+   * Uma só cópia garante que cancelar por token e por email são idênticos (mesmo «até endsAt»,
+   * mesma emissão de socket e emails).
+   */
+  private async doCancel(row: ReservationWithTablesAndTenant) {
     // Até `endsAt` e não `startsAt`: um cancelamento tardio é sempre melhor para o dono que um
     // no-show mudo. Antes, quem se atrasava 10 min e queria avisar levava um erro seco e a mesa
     // ficava bloqueada os 120 min até alguém marcar NO_SHOW à mão.
@@ -554,6 +567,65 @@ export class ReservationsService {
       this.logger.error(`pós-cancelamento de reserva falhou: ${e?.message ?? e}`),
     );
     return { ok: true };
+  }
+
+  async cancelByToken(code: string, token: string) {
+    const row = await this.prisma.reservation.findUnique({
+      where: { code },
+      include: { tables: { include: { table: true } }, tenant: true },
+    });
+    if (!row || !this.verifyToken(row, token)) throw new NotFoundException('Reserva não encontrada.');
+    // Mesmo TTL do publicByCode — o token não é uma credencial eterna.
+    if (row.startsAt.getTime() + 24 * 3_600_000 < Date.now()) {
+      throw new NotFoundException('Reserva não encontrada.');
+    }
+    return this.doCancel(row);
+  }
+
+  // ==========================================================================
+  // View / cancelamento por número + email (caminho paralelo ao token)
+  // ==========================================================================
+
+  /**
+   * Autorização por email — o CORAÇÃO desta feature. Espelha o verifyToken mas exige que a
+   * reserva seja ONLINE: `cancelTokenHash != null` é avaliado ANTES do match de email, para que
+   * as reservas MANUAIS (VIP/depósito/evento que o restaurante gere ao balcão) fiquem FORA do
+   * self-service público — o mesmo invariante que o verifyToken já garante ao caminho do token
+   * («MANUAL nunca acessível»). Sem este guard, um terceiro que soubesse código+email cancelava
+   * a reserva que o restaurante criou à mão.
+   *
+   * Resposta NEUTRA (404 igual) em TODOS os casos de falha — nunca revela se o código existe:
+   *   - row null (código inexistente)
+   *   - cancelTokenHash null (reserva MANUAL/legado)
+   *   - contactEmailKey !== key (email não bate)
+   *   - fora do TTL (startsAt + 24h já passou; igual ao caminho do token)
+   */
+  private async authorizeByEmail(code: string, email: string) {
+    const key = emailKey(email);
+    if (!key) throw new NotFoundException('Reserva não encontrada.');
+    const row = await this.prisma.reservation.findUnique({
+      // o código é gerado em maiúsculas (coluna @unique case-sensitive); aqui o cliente escreve-o
+      // à mão e no telemóvel sai muitas vezes em minúsculas — normalizar senão nunca encontra.
+      where: { code: code.trim().toUpperCase() },
+      include: { tables: { include: { table: true } }, tenant: true },
+    });
+    if (
+      !row ||
+      !row.cancelTokenHash || // ← o guard que fecha as reservas MANUAIS/legado (equivale a source ONLINE)
+      row.contactEmailKey !== key || // email não bate
+      row.startsAt.getTime() + 24 * 3_600_000 < Date.now() // fora do TTL
+    ) {
+      throw new NotFoundException('Reserva não encontrada.');
+    }
+    return row;
+  }
+
+  async publicByEmail(code: string, email: string) {
+    return this.publicReservationView(await this.authorizeByEmail(code, email));
+  }
+
+  async cancelByEmail(code: string, email: string) {
+    return this.doCancel(await this.authorizeByEmail(code, email));
   }
 
   // ==========================================================================
