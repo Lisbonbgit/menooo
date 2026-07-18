@@ -49,7 +49,8 @@ async function req(method, path, { token, body } = {}) {
 async function main() {
   console.log('— login do dono da demo');
   const login = await req('POST', '/auth/login', { body: { email: EMAIL, password: PASS } });
-  check('login 200', login.status === 200, `got ${login.status}`);
+  // POST no NestJS devolve 201 por omissão; o login é bem-sucedido em 200 OU 201.
+  check('login 200/201', login.status === 200 || login.status === 201, `got ${login.status}`);
   const token = login.json?.accessToken;
   if (!token) {
     console.log('  sem token — abortar');
@@ -59,25 +60,32 @@ async function main() {
   console.log('— obter um produto real');
   const prods = await req('GET', '/catalog/products', { token });
   check('GET produtos 200', prods.status === 200, `got ${prods.status}`);
-  const productId = prods.json?.[0]?.id;
+  const produto = prods.json?.[0];
+  const productId = produto?.id;
   if (!productId) {
     console.log('  demo sem produtos — abortar');
     process.exit(1);
   }
-
-  console.log('— criar encomenda pública (PICKUP, com email)');
-  const create = await req('POST', `/public/stores/${SLUG}/orders`, {
-    body: {
-      type: 'PICKUP',
-      customerName: 'Cliente E2E',
-      customerPhone: '912000000',
-      customerEmail: 'cliente.e2e@exemplo.pt',
-      paymentMethod: 'CASH',
-      items: [{ productId, quantity: 1 }],
-    },
+  // A demo pode ter encomenda mínima (ex.: 10 €). Pede quantidade que ultrapasse
+  // com folga qualquer mínimo razoável, a partir do preço real do produto.
+  const preco = Number(produto.price) || 5;
+  const qty = Math.max(1, Math.ceil(15 / preco));
+  const novoPedido = (nome, email) => ({
+    type: 'PICKUP',
+    customerName: nome,
+    customerPhone: '912000000',
+    customerEmail: email,
+    paymentMethod: 'CASH',
+    items: [{ productId, quantity: qty }],
   });
-  if (create.status === 400) {
-    console.log(`  loja fechada/checkout recusado (${JSON.stringify(create.json)}) — SKIP, sem falha`);
+
+  console.log(`— criar encomenda pública (PICKUP, ${qty}× produto, com email)`);
+  const create = await req('POST', `/public/stores/${SLUG}/orders`, {
+    body: novoPedido('Cliente E2E', 'cliente.e2e@exemplo.pt'),
+  });
+  // SÓ a loja fechada é motivo de SKIP (ambiental). Qualquer outro 400 é falha real.
+  if (create.status === 400 && /fechad/i.test(create.json?.message ?? '')) {
+    console.log(`  loja fechada à hora do teste (${create.json?.message}) — SKIP, sem falha`);
     console.log(`\n${pass} passed, ${fail} failed (create em skip)`);
     process.exit(fail === 0 ? 0 : 1);
   }
@@ -105,14 +113,7 @@ async function main() {
 
   console.log('— um 2.º pedido para o caminho REJECTED (PENDING → REJECTED)');
   const create2 = await req('POST', `/public/stores/${SLUG}/orders`, {
-    body: {
-      type: 'PICKUP',
-      customerName: 'Cliente E2E 2',
-      customerPhone: '912000001',
-      customerEmail: 'cliente.e2e2@exemplo.pt',
-      paymentMethod: 'CASH',
-      items: [{ productId, quantity: 1 }],
-    },
+    body: novoPedido('Cliente E2E 2', 'cliente.e2e2@exemplo.pt'),
   });
   if (create2.status === 201 || create2.status === 200) {
     const rej = await req('PATCH', `/orders/${create2.json.id}/status`, { token, body: { status: 'REJECTED' } });
