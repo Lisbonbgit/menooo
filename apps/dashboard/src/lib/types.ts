@@ -1,3 +1,5 @@
+export type MenuType = 'delivery' | 'dine_in';
+
 export interface Category {
   id: string;
   name: string;
