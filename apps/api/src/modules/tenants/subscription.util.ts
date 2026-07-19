@@ -17,6 +17,7 @@ export interface SubscriptionInfo {
 
 /**
  * Estado da subscrição:
+ * - LIFETIME: acesso permanente dado pelo super-admin (a banição continua a ganhar)
  * - NONE: nunca ativada (pendente/suspensa sem datas)
  * - TRIAL: dentro dos 7 dias de teste
  * - PAID: subscrição paga em dia
@@ -59,7 +60,7 @@ export function computeSubscription(account: WithSubscription): SubscriptionInfo
   return { state: 'NONE', trialEndsAt: null, paidUntil: null, daysLeft: null };
 }
 
-/** A conta pode ter lojas visíveis/a vender? (não banida + teste ativo ou paga) */
+/** A conta pode ter lojas visíveis/a vender? (não banida + teste ativo, paga, ou vitalícia) */
 export function isSubscriptionUsable(account: WithSubscription): boolean {
   if (account.status === 'BANNED') return false;
   const s = computeSubscription(account).state;
