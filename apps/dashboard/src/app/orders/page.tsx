@@ -110,6 +110,7 @@ function nextActions(
 
 export default function OrdersPage() {
   const [showSettings, setShowSettings] = useState(false);
+  const [detailOrder, setDetailOrder] = useState<Order | null>(null);
   const autoPrint = usePrintStore((s) => s.autoPrint);
 
   const tenant = useQuery({
@@ -277,14 +278,27 @@ export default function OrdersPage() {
             {finished.slice(0, 20).map((o) => (
               <li
                 key={o.id}
-                className="flex items-center justify-between rounded-xl border border-line bg-white px-4 py-2.5 text-[13px]"
+                role="button"
+                tabIndex={0}
+                onClick={() => setDetailOrder(o)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setDetailOrder(o);
+                  }
+                }}
+                title="Ver detalhes"
+                className="flex cursor-pointer items-center justify-between rounded-xl border border-line bg-white px-4 py-2.5 text-[13px] transition-colors hover:border-brand/40"
               >
                 <span className="font-medium">
                   #{o.number} · {o.customerName}
                 </span>
                 <span className="flex items-center gap-2">
                   <button
-                    onClick={() => print(o)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      print(o);
+                    }}
                     title="Reimprimir talão"
                     className="rounded-lg border border-line p-1.5 text-ink-mute transition-colors hover:border-brand/40 hover:text-brand-dark"
                   >
@@ -313,6 +327,14 @@ export default function OrdersPage() {
 
       {showSettings && (
         <PrinterSettings storeName={storeName} onClose={() => setShowSettings(false)} />
+      )}
+
+      {detailOrder && (
+        <OrderDetailModal
+          order={detailOrder}
+          onClose={() => setDetailOrder(null)}
+          onPrint={print}
+        />
       )}
     </AppShell>
   );
@@ -362,6 +384,45 @@ function OrderCard({
         </p>
       )}
 
+      <OrderDetails order={order} />
+
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-display text-[15px] font-semibold">
+          {Number(order.total).toFixed(2)} €
+          {Number(order.vatTotal) > 0 && (
+            <span className="ml-1.5 font-sans text-[10.5px] font-normal text-ink-mute">
+              IVA incl. {Number(order.vatTotal).toFixed(2)} €
+            </span>
+          )}
+        </span>
+        <div className="flex gap-1.5">
+          {nextActions(order).map((a) => (
+            <button
+              key={a.status}
+              onClick={() => onAdvance(order, a.status)}
+              title={a.danger ? 'Recusar' : a.label}
+              className={clsx(
+                'flex items-center gap-1.5 rounded-xl px-3 py-2 text-[12.5px] font-semibold text-white transition-transform active:scale-95',
+                a.danger
+                  ? 'bg-stone-300 text-stone-600 hover:bg-red-600 hover:text-white'
+                  : 'bg-brand shadow-card hover:bg-brand-dark',
+              )}
+            >
+              {a.icon}
+              {a.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </article>
+  );
+}
+
+// Corpo do pedido (cliente, morada, artigos, notas, pagamento) — partilhado pelo cartão
+// ativo e pelo modal de detalhes do histórico, para não duplicar a renderização.
+function OrderDetails({ order }: { order: Order }) {
+  return (
+    <>
       <p className="text-[13.5px] font-medium">{order.customerName}</p>
       <p className="text-[11.5px] text-ink-mute">
         {order.customerPhone}
@@ -410,35 +471,88 @@ function OrderCard({
           <span className="text-ink-mute"> · troco para {Number(order.changeFor).toFixed(2)} €</span>
         )}
       </p>
+    </>
+  );
+}
 
-      <div className="flex items-center justify-between gap-2">
-        <span className="font-display text-[15px] font-semibold">
-          {Number(order.total).toFixed(2)} €
-          {Number(order.vatTotal) > 0 && (
-            <span className="ml-1.5 font-sans text-[10.5px] font-normal text-ink-mute">
-              IVA incl. {Number(order.vatTotal).toFixed(2)} €
-            </span>
+const FINISHED_LABELS: Record<string, string> = {
+  COMPLETED: 'Concluído',
+  REJECTED: 'Recusado',
+  CANCELLED: 'Cancelado',
+};
+
+// Detalhes completos de um pedido do histórico (só leitura). Os dados já vêm carregados
+// na lista — não há pedido ao servidor.
+function OrderDetailModal({
+  order,
+  onClose,
+  onPrint,
+}: {
+  order: Order;
+  onClose: () => void;
+  onPrint: (o: Order) => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-5 shadow-lift"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-3 flex items-start justify-between">
+          <div>
+            <p className="font-display text-xl font-semibold leading-none">#{order.number}</p>
+            <p className="mt-1.5 flex items-center gap-1.5 text-[12px] text-ink-soft">
+              {order.type === 'DELIVERY' ? <Bike size={13} /> : <ShoppingBag size={13} />}
+              {order.type === 'DELIVERY' ? 'Entrega' : 'Take-away'}
+              <span className="text-ink-mute">· {scheduledLabel(order.createdAt)}</span>
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            title="Fechar"
+            className="rounded-lg border border-line p-1.5 text-ink-mute transition-colors hover:border-brand/40 hover:text-brand-dark"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <span
+          className={clsx(
+            'mb-3 inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold',
+            order.status === 'COMPLETED' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-700',
           )}
+        >
+          {FINISHED_LABELS[order.status] ?? order.status}
         </span>
-        <div className="flex gap-1.5">
-          {nextActions(order).map((a) => (
-            <button
-              key={a.status}
-              onClick={() => onAdvance(order, a.status)}
-              title={a.danger ? 'Recusar' : a.label}
-              className={clsx(
-                'flex items-center gap-1.5 rounded-xl px-3 py-2 text-[12.5px] font-semibold text-white transition-transform active:scale-95',
-                a.danger
-                  ? 'bg-stone-300 text-stone-600 hover:bg-red-600 hover:text-white'
-                  : 'bg-brand shadow-card hover:bg-brand-dark',
-              )}
-            >
-              {a.icon}
-              {a.label}
-            </button>
-          ))}
+
+        <OrderDetails order={order} />
+
+        <div className="mt-1 flex items-center justify-between gap-2 border-t border-line pt-3">
+          <span className="font-display text-[15px] font-semibold">
+            {Number(order.total).toFixed(2)} €
+            {Number(order.vatTotal) > 0 && (
+              <span className="ml-1.5 font-sans text-[10.5px] font-normal text-ink-mute">
+                IVA incl. {Number(order.vatTotal).toFixed(2)} €
+              </span>
+            )}
+          </span>
+          <button
+            onClick={() => onPrint(order)}
+            className="flex items-center gap-1.5 rounded-xl border border-line bg-white px-3.5 py-2 text-[12.5px] font-medium shadow-card transition-colors hover:border-brand/40 hover:text-brand-dark"
+          >
+            <Printer size={14} /> Reimprimir
+          </button>
         </div>
       </div>
-    </article>
+    </div>
   );
 }
