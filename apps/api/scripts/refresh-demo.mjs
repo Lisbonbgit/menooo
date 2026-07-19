@@ -73,10 +73,18 @@ async function main() {
   await prisma.category.deleteMany({ where: { tenantId } });
   await prisma.modifierGroup.deleteMany({ where: { tenantId } });
 
+  // menu Delivery da loja (Fase 1 dine-in: categorias/produtos pertencem a um menu)
+  const menuDelivery = await prisma.menu.upsert({
+    where: { tenantId_type: { tenantId, type: 'DELIVERY' } },
+    create: { tenantId, type: 'DELIVERY' },
+    update: {},
+  });
+
   // grupos de opções reutilizáveis (nível loja)
   const tamanho = await prisma.modifierGroup.create({
     data: {
       tenantId,
+      menuId: menuDelivery.id,
       name: 'Tamanho',
       required: true,
       minSelect: 1,
@@ -93,6 +101,7 @@ async function main() {
   const extras = await prisma.modifierGroup.create({
     data: {
       tenantId,
+      menuId: menuDelivery.id,
       name: 'Extras',
       required: false,
       minSelect: 0,
@@ -113,7 +122,7 @@ async function main() {
   let catOrder = 0;
   for (const cat of CATEGORIES) {
     const category = await prisma.category.create({
-      data: { tenantId, name: cat.name, sortOrder: catOrder++ },
+      data: { tenantId, menuId: menuDelivery.id, name: cat.name, sortOrder: catOrder++ },
     });
     let prodOrder = 0;
     for (const [name, description, price, photoId] of cat.products) {

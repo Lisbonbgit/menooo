@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { MenuType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { isSubscriptionUsable } from '../tenants/subscription.util';
 import { CreateCategoryDto, UpdateCategoryDto } from './dto/category.dto';
@@ -24,16 +24,18 @@ export class CatalogService {
   // Categorias
   // ==========================================================================
 
-  listCategories(tenantId: string) {
+  async listCategories(tenantId: string, menuType: MenuType) {
+    const menuId = await this.resolveMenuId(tenantId, menuType);
     return this.prisma.category.findMany({
-      where: { tenantId },
+      where: { tenantId, menuId },
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     });
   }
 
-  createCategory(tenantId: string, dto: CreateCategoryDto) {
+  async createCategory(tenantId: string, menuType: MenuType, dto: CreateCategoryDto) {
+    const menuId = await this.resolveMenuId(tenantId, menuType);
     return this.prisma.category.create({
-      data: { tenantId, name: dto.name, sortOrder: dto.sortOrder ?? 0 },
+      data: { tenantId, menuId, name: dto.name, sortOrder: dto.sortOrder ?? 0 },
     });
   }
 
@@ -54,16 +56,17 @@ export class CatalogService {
    * tenant (não há unique composto), e exige a lista COMPLETA — um subconjunto deixaria as
    * omitidas com o sortOrder antigo, a colidir com os índices 0..n-1 → ordem baralhada, sem erro.
    */
-  async reorderCategories(tenantId: string, ids: string[]) {
+  async reorderCategories(tenantId: string, menuType: MenuType, ids: string[]) {
     if (new Set(ids).size !== ids.length) throw new BadRequestException('IDs repetidos.');
+    const menuId = await this.resolveMenuId(tenantId, menuType);
     return this.prisma.$transaction(async (tx) => {
-      const total = await tx.category.count({ where: { tenantId } });
-      const owned = await tx.category.count({ where: { id: { in: ids }, tenantId } });
+      const total = await tx.category.count({ where: { tenantId, menuId } });
+      const owned = await tx.category.count({ where: { id: { in: ids }, tenantId, menuId } });
       if (owned !== ids.length || owned !== total) {
-        throw new BadRequestException('A lista tem de conter todas as categorias, sem repetidos.');
+        throw new BadRequestException('A lista tem de conter todas as categorias do menu, sem repetidos.');
       }
       for (const [i, id] of ids.entries()) {
-        await tx.category.updateMany({ where: { id, tenantId }, data: { sortOrder: i } });
+        await tx.category.updateMany({ where: { id, tenantId, menuId }, data: { sortOrder: i } });
       }
       return { reordered: ids.length };
     });
@@ -73,9 +76,13 @@ export class CatalogService {
   // Produtos
   // ==========================================================================
 
-  listProducts(tenantId: string, categoryId?: string) {
+  listProducts(tenantId: string, menuType: MenuType, categoryId?: string) {
     return this.prisma.product.findMany({
-      where: { tenantId, ...(categoryId ? { categoryId } : {}) },
+      where: {
+        tenantId,
+        category: { menu: { tenantId, type: menuType } },
+        ...(categoryId ? { categoryId } : {}),
+      },
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     });
   }
@@ -126,17 +133,22 @@ export class CatalogService {
 
   async updateProduct(tenantId: string, id: string, dto: UpdateProductDto) {
     const current = await this.ensureProduct(tenantId, id);
-    if (dto.categoryId) await this.ensureCategory(tenantId, dto.categoryId);
     const data: Prisma.ProductUncheckedUpdateInput = { ...dto };
-    // Mudar de categoria: o sortOrder vinha numerado na categoria de ORIGEM. Recolocar no FIM da
-    // destino, senão o produto aterra empatado/aleatório (o desempate é por name/id). O sortOrder
-    // continua a ser dono EXCLUSIVO deste caminho — o modal de edição nunca o envia.
     if (dto.categoryId && dto.categoryId !== current.categoryId) {
+      const [newCat, curCat] = await Promise.all([
+        this.ensureCategory(tenantId, dto.categoryId),
+        this.prisma.category.findUnique({ where: { id: current.categoryId } }),
+      ]);
+      if (newCat.menuId !== curCat?.menuId) {
+        throw new BadRequestException('Não podes mover um produto para uma categoria de outro menu.');
+      }
       const last = await this.prisma.product.aggregate({
         where: { tenantId, categoryId: dto.categoryId },
         _max: { sortOrder: true },
       });
       data.sortOrder = (last._max.sortOrder ?? -1) + 1;
+    } else if (dto.categoryId) {
+      await this.ensureCategory(tenantId, dto.categoryId);
     }
     return this.prisma.product.update({ where: { id }, data });
   }
@@ -176,9 +188,10 @@ export class CatalogService {
   // Grupos de modificadores (biblioteca do restaurante)
   // ==========================================================================
 
-  async listModifierGroups(tenantId: string) {
+  async listModifierGroups(tenantId: string, menuType: MenuType) {
+    const menuId = await this.resolveMenuId(tenantId, menuType);
     const groups = await this.prisma.modifierGroup.findMany({
-      where: { tenantId },
+      where: { tenantId, menuId },
       orderBy: { name: 'asc' },
       include: {
         modifiers: { orderBy: { sortOrder: 'asc' } },
@@ -199,18 +212,13 @@ export class CatalogService {
     }
   }
 
-  createModifierGroup(tenantId: string, dto: CreateModifierGroupDto) {
+  async createModifierGroup(tenantId: string, menuType: MenuType, dto: CreateModifierGroupDto) {
     const minSelect = dto.minSelect ?? 0;
     const maxSelect = dto.maxSelect ?? 1;
     this.assertGroupLimits(minSelect, maxSelect);
+    const menuId = await this.resolveMenuId(tenantId, menuType);
     return this.prisma.modifierGroup.create({
-      data: {
-        tenantId,
-        name: dto.name,
-        required: dto.required ?? false,
-        minSelect,
-        maxSelect,
-      },
+      data: { tenantId, menuId, name: dto.name, required: dto.required ?? false, minSelect, maxSelect },
     });
   }
 
@@ -229,7 +237,14 @@ export class CatalogService {
   /** anexa um grupo da biblioteca a um produto (no fim da lista). */
   async attachModifierGroup(tenantId: string, productId: string, groupId: string) {
     await this.ensureProduct(tenantId, productId);
-    await this.ensureModifierGroup(tenantId, groupId);
+    const group = await this.ensureModifierGroup(tenantId, groupId);
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId },
+      include: { category: true },
+    });
+    if (product!.category.menuId !== group.menuId) {
+      throw new BadRequestException('Esse grupo de opções é de outro menu.');
+    }
     const last = await this.prisma.productModifierGroup.aggregate({
       where: { productId },
       _max: { sortOrder: true },
@@ -287,7 +302,7 @@ export class CatalogService {
   // Menu público (storefront)
   // ==========================================================================
 
-  async getPublicMenu(slug: string) {
+  async getPublicMenu(slug: string, menuType: MenuType) {
     const tenant = await this.prisma.tenant.findUnique({
       where: { slug },
       include: { account: true },
@@ -295,8 +310,12 @@ export class CatalogService {
     if (!tenant || tenant.status !== 'ACTIVE' || !isSubscriptionUsable(tenant.account)) {
       throw new NotFoundException('Loja não encontrada.');
     }
+    const menu = await this.prisma.menu.findUnique({
+      where: { tenantId_type: { tenantId: tenant.id, type: menuType } },
+    });
+    if (!menu) return []; // loja nova sem este menu ainda → vazio
     const categories = await this.prisma.category.findMany({
-      where: { tenantId: tenant.id, active: true },
+      where: { tenantId: tenant.id, menuId: menu.id, active: true },
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
       include: {
         products: {
@@ -315,6 +334,16 @@ export class CatalogService {
   // ==========================================================================
   // Verificações de propriedade (multi-tenant)
   // ==========================================================================
+
+  /** Resolve (e cria se faltar) o menu da loja para um tipo. Idempotente pelo unique (tenantId,type). */
+  private async resolveMenuId(tenantId: string, type: MenuType): Promise<string> {
+    const menu = await this.prisma.menu.upsert({
+      where: { tenantId_type: { tenantId, type } },
+      create: { tenantId, type },
+      update: {},
+    });
+    return menu.id;
+  }
 
   private async ensureCategory(tenantId: string, id: string) {
     const found = await this.prisma.category.findFirst({ where: { id, tenantId } });

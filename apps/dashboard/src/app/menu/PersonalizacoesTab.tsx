@@ -11,16 +11,16 @@ import {
   useModifierGroups,
   useUpdateModifierGroup,
 } from '@/lib/catalog-hooks';
-import type { ModifierGroupWithUsage } from '@/lib/types';
+import type { MenuType, ModifierGroupWithUsage } from '@/lib/types';
 
 const MAX_CHOICES = [1, 2, 3, 4, 5, 10];
 
 /** Biblioteca de grupos de complementos do restaurante: cria-se aqui uma vez
  *  e anexa-se aos produtos na Vista geral. Editar aqui muda em todos os
  *  produtos onde o grupo está anexado. */
-export function PersonalizacoesTab() {
-  const groups = useModifierGroups();
-  const createGroup = useCreateModifierGroup();
+export function PersonalizacoesTab({ menu = 'delivery' }: { menu?: MenuType }) {
+  const groups = useModifierGroups(menu);
+  const createGroup = useCreateModifierGroup(menu);
 
   const [name, setName] = useState('');
   const [required, setRequired] = useState(false);
@@ -113,18 +113,18 @@ export function PersonalizacoesTab() {
 
       <div className="stagger space-y-3">
         {groups.data?.map((g) => (
-          <GroupCard key={g.id} group={g} />
+          <GroupCard key={g.id} menu={menu} group={g} />
         ))}
       </div>
     </div>
   );
 }
 
-function GroupCard({ group }: { group: ModifierGroupWithUsage }) {
-  const del = useDeleteModifierGroup();
-  const update = useUpdateModifierGroup();
-  const createModifier = useCreateModifier();
-  const deleteModifier = useDeleteModifier();
+function GroupCard({ menu, group }: { menu: MenuType; group: ModifierGroupWithUsage }) {
+  const del = useDeleteModifierGroup(menu);
+  const update = useUpdateModifierGroup(menu);
+  const createModifier = useCreateModifier(menu);
+  const deleteModifier = useDeleteModifier(menu);
 
   const [editName, setEditName] = useState(false);
   const [name, setName] = useState(group.name);

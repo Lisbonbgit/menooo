@@ -35,7 +35,7 @@ import {
   useAttachGroup,
   useDetachGroup,
 } from '@/lib/catalog-hooks';
-import type { Category, Product } from '@/lib/types';
+import type { Category, MenuType, Product } from '@/lib/types';
 import { PersonalizacoesTab } from './PersonalizacoesTab';
 
 type MenuTab = 'geral' | 'personalizacoes';
@@ -62,10 +62,12 @@ interface RowDrag {
 }
 
 export default function MenuPage() {
-  const categories = useCategories();
-  const products = useProducts();
-  const createCategory = useCreateCategory();
-  const reorderCategories = useReorderCategories();
+  const [menuAtivo, setMenuAtivo] = useState<MenuType>('delivery');
+
+  const categories = useCategories(menuAtivo);
+  const products = useProducts(menuAtivo);
+  const createCategory = useCreateCategory(menuAtivo);
+  const reorderCategories = useReorderCategories(menuAtivo);
 
   // Sobe/desce uma categoria uma posição. Envia a lista COMPLETA reindexada (a API recusa
   // subconjuntos). As setas ficam desativadas enquanto um reorder está em curso (serializar).
@@ -124,6 +126,27 @@ export default function MenuPage() {
         ) : undefined
       }
     >
+      {/* seletor de menu: Delivery vs Sala (dine-in) */}
+      <div className="mb-4 flex w-fit gap-1 rounded-xl border border-line bg-white p-1 shadow-card">
+        {(
+          [
+            ['delivery', 'Delivery'],
+            ['dine_in', 'Sala'],
+          ] as [MenuType, string][]
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            onClick={() => setMenuAtivo(id)}
+            className={
+              'rounded-lg px-4 py-1.5 text-[13px] font-semibold transition-colors ' +
+              (menuAtivo === id ? 'bg-brand text-white' : 'text-ink-soft hover:bg-cream')
+            }
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       {/* abas: produtos vs biblioteca de complementos */}
       <div className="mb-5 flex w-fit gap-1 rounded-xl border border-line bg-white p-1 shadow-card">
         {(
@@ -148,7 +171,7 @@ export default function MenuPage() {
       {/* as duas abas ficam montadas (hidden) para não perder painéis
           abertos e texto por guardar ao saltar para a biblioteca e voltar */}
       <div className={tab === 'personalizacoes' ? undefined : 'hidden'}>
-        <PersonalizacoesTab />
+        <PersonalizacoesTab menu={menuAtivo} />
       </div>
 
       <div className={tab === 'geral' ? undefined : 'hidden'}>
@@ -170,6 +193,7 @@ export default function MenuPage() {
           {categories.data?.map((cat, i) => (
             <CategorySection
               key={cat.id}
+              menu={menuAtivo}
               category={cat}
               products={productsByCategory(cat.id)}
               onEdit={setEditing}
@@ -187,6 +211,7 @@ export default function MenuPage() {
       {editing && (
         <ProductForm
           key={editing.id}
+          menu={menuAtivo}
           mode="edit"
           categoryId={editing.categoryId}
           product={editing}
@@ -200,6 +225,7 @@ export default function MenuPage() {
 
 /** Cabeçalho (nome editável em linha — T5), lista de produtos e formulário de adicionar. */
 function CategorySection({
+  menu,
   category,
   products,
   onEdit,
@@ -210,6 +236,7 @@ function CategorySection({
   isLast,
   reorderPending,
 }: {
+  menu: MenuType;
   category: Category;
   products: Product[];
   onEdit: (product: Product) => void;
@@ -220,8 +247,8 @@ function CategorySection({
   isLast: boolean;
   reorderPending: boolean;
 }) {
-  const deleteCategory = useDeleteCategory();
-  const updateCategory = useUpdateCategory();
+  const deleteCategory = useDeleteCategory(menu);
+  const updateCategory = useUpdateCategory(menu);
   const [editName, setEditName] = useState(false);
   const [name, setName] = useState(category.name);
 
@@ -331,13 +358,14 @@ function CategorySection({
       </div>
 
       <ProductList
+        menu={menu}
         category={category}
         products={products}
         onEdit={onEdit}
         onGoToLibrary={onGoToLibrary}
       />
 
-      <ProductForm mode="create" categoryId={category.id} />
+      <ProductForm menu={menu} mode="create" categoryId={category.id} />
     </section>
   );
 }
@@ -345,17 +373,19 @@ function CategorySection({
 /** Lista ordenável de produtos: setas ↑↓ (principal) + arrasto (extra). Ambos enviam a lista
  *  COMPLETA da categoria ao reorder em lote. */
 function ProductList({
+  menu,
   category,
   products,
   onEdit,
   onGoToLibrary,
 }: {
+  menu: MenuType;
   category: Category;
   products: Product[];
   onEdit: (product: Product) => void;
   onGoToLibrary: () => void;
 }) {
-  const reorder = useReorderProducts();
+  const reorder = useReorderProducts(menu);
   const listRef = useRef<HTMLUListElement>(null);
   const rowRefs = useRef(new Map<string, HTMLLIElement>());
   const dragRef = useRef<RowDrag | null>(null);
@@ -521,6 +551,7 @@ function ProductList({
       {products.map((p, i) => (
         <ProductRow
           key={p.id}
+          menu={menu}
           product={p}
           onEdit={onEdit}
           onGoToLibrary={onGoToLibrary}
@@ -548,6 +579,7 @@ function ProductList({
 }
 
 function ProductRow({
+  menu,
   product,
   onEdit,
   onGoToLibrary,
@@ -564,6 +596,7 @@ function ProductRow({
   reorderPending,
   setRowRef,
 }: {
+  menu: MenuType;
   product: Product;
   onEdit: (product: Product) => void;
   onGoToLibrary: () => void;
@@ -580,9 +613,9 @@ function ProductRow({
   reorderPending: boolean;
   setRowRef: (id: string, el: HTMLLIElement | null) => void;
 }) {
-  const toggle = useToggleProduct();
-  const del = useDeleteProduct();
-  const update = useUpdateProduct();
+  const toggle = useToggleProduct(menu);
+  const del = useDeleteProduct(menu);
+  const update = useUpdateProduct(menu);
   const [open, setOpen] = useState(false);
   const [editDesc, setEditDesc] = useState(false);
   const [desc, setDesc] = useState(product.description ?? '');
@@ -762,7 +795,7 @@ function ProductRow({
           </div>
         </div>
       </div>
-      {open && <OptionsEditor productId={product.id} onGoToLibrary={onGoToLibrary} />}
+      {open && <OptionsEditor menu={menu} productId={product.id} onGoToLibrary={onGoToLibrary} />}
     </li>
   );
 }
@@ -770,16 +803,18 @@ function ProductRow({
 /** Grupos de complementos anexados ao produto. Editar opções/preços é na
  *  aba Personalizações; aqui só se anexa e desanexa. */
 function OptionsEditor({
+  menu,
   productId,
   onGoToLibrary,
 }: {
+  menu: MenuType;
   productId: string;
   onGoToLibrary: () => void;
 }) {
   const detail = useProductDetail(productId);
-  const library = useModifierGroups();
-  const attach = useAttachGroup();
-  const detach = useDetachGroup();
+  const library = useModifierGroups(menu);
+  const attach = useAttachGroup(menu);
+  const detach = useDetachGroup(menu);
   const [selected, setSelected] = useState('');
 
   const attached = detail.data?.modifierGroups ?? [];
@@ -925,20 +960,22 @@ function OptionsEditor({
  * NUNCA é enviado — a ordem é do reorder (um modal aberto antes de um arrasto revertia a posição).
  */
 function ProductForm({
+  menu,
   mode,
   categoryId,
   product,
   categories,
   onClose,
 }: {
+  menu: MenuType;
   mode: 'create' | 'edit';
   categoryId: string;
   product?: Product;
   categories?: Category[];
   onClose?: () => void;
 }) {
-  const create = useCreateProduct();
-  const update = useUpdateProduct();
+  const create = useCreateProduct(menu);
+  const update = useUpdateProduct(menu);
   const isEdit = mode === 'edit';
 
   const [open, setOpen] = useState(false); // só o modo 'create' (colapsado)

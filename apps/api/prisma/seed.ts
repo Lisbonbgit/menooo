@@ -59,11 +59,23 @@ async function main() {
   // --- Menu demo (idempotente: só cria se vazio) ---
   const catCount = await prisma.category.count({ where: { tenantId: tenant.id } });
   if (catCount === 0) {
+    // menu Delivery da loja (Fase 1 dine-in: categorias/produtos pertencem a um menu)
+    const menuDelivery = await prisma.menu.upsert({
+      where: { tenantId_type: { tenantId: tenant.id, type: 'DELIVERY' } },
+      create: { tenantId: tenant.id, type: 'DELIVERY' },
+      update: {},
+    });
+    await prisma.menu.upsert({
+      where: { tenantId_type: { tenantId: tenant.id, type: 'DINE_IN' } },
+      create: { tenantId: tenant.id, type: 'DINE_IN' },
+      update: {},
+    });
+
     const pizzas = await prisma.category.create({
-      data: { tenantId: tenant.id, name: 'Pizzas', sortOrder: 1 },
+      data: { tenantId: tenant.id, menuId: menuDelivery.id, name: 'Pizzas', sortOrder: 1 },
     });
     const bebidas = await prisma.category.create({
-      data: { tenantId: tenant.id, name: 'Bebidas', sortOrder: 2 },
+      data: { tenantId: tenant.id, menuId: menuDelivery.id, name: 'Bebidas', sortOrder: 2 },
     });
 
     await prisma.product.create({
@@ -79,6 +91,7 @@ async function main() {
             group: {
               create: {
                 tenantId: tenant.id,
+                menuId: menuDelivery.id,
                 name: 'Tamanho',
                 required: true,
                 minSelect: 1,
