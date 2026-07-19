@@ -20,6 +20,7 @@ import {
   ShieldCheck,
   Trash2,
   AlertTriangle,
+  Infinity,
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/auth-store';
 import { useAuthHydrated } from '@/lib/use-hydrated';
@@ -30,6 +31,7 @@ import {
   useSetTenantStatus,
   useRecordPayment,
   useBanAccount,
+  useSetLifetime,
   useDeleteAccount,
   type AdminTenant,
   type TenantStatus,
@@ -49,7 +51,9 @@ const STATUS: Record<TenantStatus, { label: string; cls: string }> = {
 
 function SubBadge({ sub }: { sub: Subscription }) {
   const meta =
-    sub.state === 'PAID'
+    sub.state === 'LIFETIME'
+      ? { label: 'Vitalício', cls: 'bg-brand-soft text-brand-dark' }
+      : sub.state === 'PAID'
       ? { label: `Paga até ${new Date(sub.paidUntil!).toLocaleDateString('pt-PT')}`, cls: 'bg-green-100 text-green-800' }
       : sub.state === 'TRIAL'
         ? { label: `Teste · ${sub.daysLeft} ${sub.daysLeft === 1 ? 'dia' : 'dias'}`, cls: 'bg-blue-100 text-blue-800' }
@@ -663,8 +667,10 @@ function SubscriptionCard({
 /** Secção "Empresa": estado da conta do dono, banir/reativar e exclusão definitiva. */
 function AccountCard({ account, onDeleted }: { account: AccountSummary; onDeleted: () => void }) {
   const ban = useBanAccount();
+  const lifetime = useSetLifetime();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const banned = account.status === 'BANNED';
+  const isLifetime = account.lifetimeAccess;
 
   async function toggleBan() {
     const msg = banned
@@ -676,6 +682,19 @@ function AccountCard({ account, onDeleted }: { account: AccountSummary; onDelete
       toast.success(banned ? 'Empresa reativada' : 'Empresa banida');
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? 'Erro ao atualizar a empresa');
+    }
+  }
+
+  async function toggleLifetime() {
+    const msg = isLifetime
+      ? `Retirar o acesso vitalício de "${account.name}"? Volta a depender de teste/pagamento.`
+      : `Dar acesso vitalício a "${account.name}"? A empresa fica com acesso permanente, sem pagar.`;
+    if (!confirm(msg)) return;
+    try {
+      await lifetime.mutateAsync({ accountId: account.id, lifetime: !isLifetime });
+      toast.success(isLifetime ? 'Acesso vitalício retirado' : 'Acesso vitalício dado');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? 'Erro ao atualizar o acesso');
     }
   }
 
@@ -694,8 +713,26 @@ function AccountCard({ account, onDeleted }: { account: AccountSummary; onDelete
               Ativa
             </span>
           )}
+          {isLifetime && (
+            <span className="rounded-full bg-brand-soft px-2.5 py-1 text-[11px] font-semibold text-brand-dark">
+              Vitalício
+            </span>
+          )}
         </div>
         <div className="flex gap-2">
+          <button
+            onClick={toggleLifetime}
+            disabled={lifetime.isPending}
+            className={clsx(
+              'flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-[12.5px] font-medium transition-colors disabled:opacity-60',
+              isLifetime
+                ? 'border border-line bg-white text-ink-soft hover:border-red-300 hover:bg-red-50 hover:text-red-700'
+                : 'bg-brand font-semibold text-white hover:bg-brand-dark',
+            )}
+          >
+            <Infinity size={14} />
+            {isLifetime ? 'Retirar vitalício' : 'Acesso vitalício'}
+          </button>
           <button
             onClick={toggleBan}
             disabled={ban.isPending}

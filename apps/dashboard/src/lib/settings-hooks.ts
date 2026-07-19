@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from './api';
 
 export interface TenantSubscription {
-  state: 'NONE' | 'TRIAL' | 'PAID' | 'EXPIRED';
+  state: 'NONE' | 'TRIAL' | 'PAID' | 'EXPIRED' | 'LIFETIME';
   trialEndsAt: string | null;
   paidUntil: string | null;
   daysLeft: number | null;

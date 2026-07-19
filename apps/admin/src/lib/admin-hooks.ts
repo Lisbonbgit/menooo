@@ -6,7 +6,7 @@ import { api } from './api';
 export type TenantStatus = 'PENDING' | 'ACTIVE' | 'SUSPENDED' | 'CLOSED';
 
 export interface Subscription {
-  state: 'NONE' | 'TRIAL' | 'PAID' | 'EXPIRED';
+  state: 'NONE' | 'TRIAL' | 'PAID' | 'EXPIRED' | 'LIFETIME';
   trialEndsAt: string | null;
   paidUntil: string | null;
   daysLeft: number | null;
@@ -26,6 +26,7 @@ export interface AccountSummary {
   name: string;
   status: 'ACTIVE' | 'BANNED';
   bannedAt: string | null;
+  lifetimeAccess: boolean;
 }
 
 export interface AdminTenant {
@@ -158,6 +159,20 @@ export function useBanAccount() {
   return useMutation({
     mutationFn: async ({ accountId, banned }: { accountId: string; banned: boolean }) =>
       (await api.patch(`/admin/accounts/${accountId}/ban`, { banned })).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-tenants'] });
+      qc.invalidateQueries({ queryKey: ['admin-stats'] });
+      qc.invalidateQueries({ queryKey: ['admin-tenant'] });
+    },
+  });
+}
+
+/** Dá ou retira acesso vitalício (permanente) a uma empresa. */
+export function useSetLifetime() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ accountId, lifetime }: { accountId: string; lifetime: boolean }) =>
+      (await api.patch(`/admin/accounts/${accountId}/lifetime`, { lifetime })).data,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin-tenants'] });
       qc.invalidateQueries({ queryKey: ['admin-stats'] });

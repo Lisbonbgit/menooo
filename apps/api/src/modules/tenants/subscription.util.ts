@@ -1,12 +1,12 @@
 import { Account } from '@prisma/client';
 
-export type SubscriptionState = 'NONE' | 'TRIAL' | 'PAID' | 'EXPIRED';
+export type SubscriptionState = 'NONE' | 'TRIAL' | 'PAID' | 'EXPIRED' | 'LIFETIME';
 
 /** Objeto com a subscrição (a conta do dono, ou algo com os mesmos campos).
  *  `status` é opcional para quem só tem as datas; quando presente, uma conta
  *  banida nunca é utilizável. */
 type WithSubscription = Pick<Account, 'trialEndsAt' | 'paidUntil'> &
-  Partial<Pick<Account, 'status'>>;
+  Partial<Pick<Account, 'status' | 'lifetimeAccess'>>;
 
 export interface SubscriptionInfo {
   state: SubscriptionState;
@@ -17,6 +17,7 @@ export interface SubscriptionInfo {
 
 /**
  * Estado da subscrição:
+ * - LIFETIME: acesso permanente dado pelo super-admin (a banição continua a ganhar)
  * - NONE: nunca ativada (pendente/suspensa sem datas)
  * - TRIAL: dentro dos 7 dias de teste
  * - PAID: subscrição paga em dia
@@ -24,6 +25,14 @@ export interface SubscriptionInfo {
  */
 export function computeSubscription(account: WithSubscription): SubscriptionInfo {
   const now = Date.now();
+  if (account.lifetimeAccess) {
+    return {
+      state: 'LIFETIME',
+      trialEndsAt: account.trialEndsAt ?? null,
+      paidUntil: account.paidUntil ?? null,
+      daysLeft: null,
+    };
+  }
   const trial = account.trialEndsAt?.getTime() ?? null;
   const paid = account.paidUntil?.getTime() ?? null;
 
@@ -51,9 +60,9 @@ export function computeSubscription(account: WithSubscription): SubscriptionInfo
   return { state: 'NONE', trialEndsAt: null, paidUntil: null, daysLeft: null };
 }
 
-/** A conta pode ter lojas visíveis/a vender? (não banida + teste ativo ou paga) */
+/** A conta pode ter lojas visíveis/a vender? (não banida + teste ativo, paga, ou vitalícia) */
 export function isSubscriptionUsable(account: WithSubscription): boolean {
   if (account.status === 'BANNED') return false;
   const s = computeSubscription(account).state;
-  return s === 'TRIAL' || s === 'PAID';
+  return s === 'TRIAL' || s === 'PAID' || s === 'LIFETIME';
 }

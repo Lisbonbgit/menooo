@@ -138,6 +138,7 @@ export class AdminService {
         name: t.account.name,
         status: t.account.status,
         bannedAt: t.account.bannedAt,
+        lifetimeAccess: t.account.lifetimeAccess,
       },
     }));
   }
@@ -237,6 +238,7 @@ export class AdminService {
         name: tenant.account.name,
         status: tenant.account.status,
         bannedAt: tenant.account.bannedAt,
+        lifetimeAccess: tenant.account.lifetimeAccess,
       },
       payments: payments.map((p) => ({
         id: p.id,
@@ -370,6 +372,17 @@ export class AdminService {
         : []),
     ]);
     return { id: updated.id, name: updated.name, status: updated.status, bannedAt: updated.bannedAt };
+  }
+
+  /** Dá ou retira acesso vitalício (permanente) a uma empresa. Reversível, sem efeitos colaterais. */
+  async setLifetimeAccess(id: string, lifetime: boolean) {
+    const account = await this.prisma.account.findUnique({ where: { id } });
+    if (!account) throw new NotFoundException('Empresa não encontrada.');
+    const updated = await this.prisma.account.update({
+      where: { id },
+      data: { lifetimeAccess: lifetime },
+    });
+    return { id: updated.id, name: updated.name, lifetimeAccess: updated.lifetimeAccess };
   }
 
   /**

@@ -502,7 +502,9 @@ function BillingCard({ tenant }: { tenant: TenantSettings }) {
   }
 
   const stateMeta =
-    sub?.state === 'PAID'
+    sub?.state === 'LIFETIME'
+      ? { label: 'Ativa', cls: 'bg-green-100 text-green-800' }
+      : sub?.state === 'PAID'
       ? {
           label: `Paga até ${new Date(sub.paidUntil!).toLocaleDateString('pt-PT')}`,
           cls: 'bg-green-100 text-green-800',
@@ -517,6 +519,7 @@ function BillingCard({ tenant }: { tenant: TenantSettings }) {
           : { label: 'Aguarda ativação da loja', cls: 'bg-stone-200 text-stone-600' };
 
   const hasAutoSub = !!tenant.stripeSubscriptionId;
+  const isLifetime = sub?.state === 'LIFETIME';
 
   return (
     <section className="animate-fade-up mb-5 rounded-xl border border-line bg-white p-5 shadow-card">
@@ -535,37 +538,41 @@ function BillingCard({ tenant }: { tenant: TenantSettings }) {
               </span>
             </div>
             <p className="mt-0.5 text-[12px] text-ink-mute">
-              {hasAutoSub
-                ? 'Renovação mensal automática ativa (Stripe).'
-                : 'Depois do período de teste, a loja precisa de subscrição ativa para ficar online.'}
+              {isLifetime
+                ? 'Subscrição ativa.'
+                : hasAutoSub
+                  ? 'Renovação mensal automática ativa (Stripe).'
+                  : 'Depois do período de teste, a loja precisa de subscrição ativa para ficar online.'}
             </p>
           </div>
         </div>
 
-        <div className="flex gap-2">
-          {hasAutoSub ? (
-            <button
-              onClick={() => go('/billing/portal')}
-              disabled={redirecting}
-              className="rounded-xl border border-line bg-white px-4 py-2.5 text-[13px] font-medium shadow-card transition-colors hover:border-brand/40 disabled:opacity-60"
-            >
-              {redirecting ? 'A abrir…' : 'Gerir pagamento e faturas'}
-            </button>
-          ) : billing.data?.enabled ? (
-            <button
-              onClick={() => go('/billing/checkout')}
-              disabled={redirecting}
-              className="flex items-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-[13.5px] font-semibold text-white shadow-lift transition-all hover:bg-brand-dark disabled:opacity-60"
-            >
-              <Sparkles size={15} />
-              {redirecting ? 'A abrir o pagamento…' : 'Ativar subscrição mensal'}
-            </button>
-          ) : (
-            <p className="max-w-56 text-right text-[12px] text-ink-mute">
-              Pagamento automático brevemente — por agora, contacta a equipa Menooo para ativar.
-            </p>
-          )}
-        </div>
+        {!isLifetime && (
+          <div className="flex gap-2">
+            {hasAutoSub ? (
+              <button
+                onClick={() => go('/billing/portal')}
+                disabled={redirecting}
+                className="rounded-xl border border-line bg-white px-4 py-2.5 text-[13px] font-medium shadow-card transition-colors hover:border-brand/40 disabled:opacity-60"
+              >
+                {redirecting ? 'A abrir…' : 'Gerir pagamento e faturas'}
+              </button>
+            ) : billing.data?.enabled ? (
+              <button
+                onClick={() => go('/billing/checkout')}
+                disabled={redirecting}
+                className="flex items-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-[13.5px] font-semibold text-white shadow-lift transition-all hover:bg-brand-dark disabled:opacity-60"
+              >
+                <Sparkles size={15} />
+                {redirecting ? 'A abrir o pagamento…' : 'Ativar subscrição mensal'}
+              </button>
+            ) : (
+              <p className="max-w-56 text-right text-[12px] text-ink-mute">
+                Pagamento automático brevemente — por agora, contacta a equipa Menooo para ativar.
+              </p>
+            )}
+          </div>
+        )}
       </div>
     </section>
   );
