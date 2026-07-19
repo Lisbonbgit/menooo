@@ -112,6 +112,7 @@ model Account {
   trialEndsAt          DateTime? // fim do período de teste
   trialReminderSentAt  DateTime? // aviso de fim de teste já enviado (evita repetir)
   paidUntil            DateTime? // subscrição paga até esta data (estendida por pagamentos)
+  lifetimeAccess       Boolean       @default(false) // acesso permanente dado pelo super-admin
   stripeCustomerId     String?       @unique
   stripeSubscriptionId String?
 

@@ -16,6 +16,7 @@ import { MailService } from '../mail/mail.service';
 import { UpdateTenantStatusDto } from './dto/update-tenant-status.dto';
 import { RecordPaymentDto } from './dto/record-payment.dto';
 import { BanAccountDto } from './dto/ban-account.dto';
+import { SetLifetimeDto } from './dto/set-lifetime.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 
@@ -72,6 +73,12 @@ export class AdminController {
   @Patch('accounts/:id/ban')
   banAccount(@Param('id') id: string, @Body() dto: BanAccountDto) {
     return this.admin.banAccount(id, dto.banned);
+  }
+
+  /** Dá ou retira acesso vitalício (permanente) a uma empresa. */
+  @Patch('accounts/:id/lifetime')
+  setLifetime(@Param('id') id: string, @Body() dto: SetLifetimeDto) {
+    return this.admin.setLifetimeAccess(id, dto.lifetime);
   }
 
   /** Exclusão definitiva da empresa (exige estar banida). Irreversível. */
