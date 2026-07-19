@@ -66,7 +66,7 @@ async function productIds(token, categoryId) {
 async function main() {
   const prisma = new PrismaClient({ datasources: { db: { url: DATABASE_URL } } });
   let token;
-  const created = { catA: null, catB: null };
+  const created = { catA: null, catB: null, catSala: null, prodSala: null, grpSala: null };
   const foreign = { tenantId: null, categoryId: null, productId: null };
 
   try {
@@ -123,8 +123,15 @@ async function main() {
     check('outro tenant encontrado', !!otherTenant, 'nenhum outro tenant na BD');
     foreign.tenantId = otherTenant?.id;
     if (foreign.tenantId) {
+      // Category.menuId é obrigatório (Fase 1 dine-in): o menu Delivery do tenant alheio já existe
+      // (backfill da migração cria um por tenant), mas o upsert garante mesmo para tenants novos.
+      const foreignMenu = await prisma.menu.upsert({
+        where: { tenantId_type: { tenantId: foreign.tenantId, type: 'DELIVERY' } },
+        create: { tenantId: foreign.tenantId, type: 'DELIVERY' },
+        update: {},
+      });
       const fcat = await prisma.category.create({
-        data: { tenantId: foreign.tenantId, name: `E2E-FOREIGN-${RUN}` },
+        data: { tenantId: foreign.tenantId, menuId: foreignMenu.id, name: `E2E-FOREIGN-${RUN}` },
       });
       foreign.categoryId = fcat.id;
       const fprod = await prisma.product.create({
@@ -271,6 +278,61 @@ async function main() {
     check('PATCH limpar descrição ("") → 200', cleared.status === 200, `got ${cleared.status}`);
     check('descrição REALMENTE limpa (não manteve a antiga)', cleared.json?.description === '',
       `got ${JSON.stringify(cleared.json?.description)} — se for a antiga, a armadilha do undefined voltou`);
+
+    // =========================================================================
+    // N. Menus separados (Fase 1 dine-in): isolamento Delivery vs Sala
+    // =========================================================================
+    console.log('— N. menus separados');
+    const catSala = await req('POST', `/catalog/categories?menu=dine_in`, {
+      token, body: { name: `Sala ${RUN}` },
+    });
+    check('criar categoria na Sala → 201', catSala.status === 201, `got ${catSala.status}`);
+    created.catSala = catSala.json?.id;
+
+    const listaDelivery = await req('GET', `/catalog/categories?menu=delivery`, { token });
+    check(
+      'categoria da Sala NÃO aparece no Delivery',
+      Array.isArray(listaDelivery.json) && !listaDelivery.json.some((c) => c.id === created.catSala),
+    );
+    const listaSala = await req('GET', `/catalog/categories?menu=dine_in`, { token });
+    check(
+      'categoria da Sala aparece na Sala',
+      Array.isArray(listaSala.json) && listaSala.json.some((c) => c.id === created.catSala),
+    );
+
+    // produto na Sala não aparece na lista de produtos do Delivery
+    const prodSala = await req('POST', `/catalog/products`, {
+      token, body: { categoryId: created.catSala, name: `PSala ${RUN}`, price: 5 },
+    });
+    check('criar produto na Sala → 201', prodSala.status === 201, `got ${prodSala.status}`);
+    created.prodSala = prodSala.json?.id;
+    const prodsDelivery = await req('GET', `/catalog/products?menu=delivery`, { token });
+    check(
+      'produto da Sala NÃO aparece nos produtos do Delivery',
+      Array.isArray(prodsDelivery.json) && !prodsDelivery.json.some((p) => p.id === created.prodSala),
+    );
+
+    // guarda: grupo da Sala não anexa a produto do Delivery
+    const grpSala = await req('POST', `/catalog/modifier-groups?menu=dine_in`, {
+      token, body: { name: `GSala ${RUN}`, required: false, maxSelect: 1 },
+    });
+    created.grpSala = grpSala.json?.id;
+    // `created.catA`/produto do Delivery são criados mais acima no script; usar um produto do Delivery.
+    const algumProdDelivery = (prodsDelivery.json ?? [])[0]?.id;
+    if (algumProdDelivery) {
+      const attach = await req(
+        'POST', `/catalog/products/${algumProdDelivery}/modifier-groups/${created.grpSala}`, { token },
+      );
+      check('anexar grupo da Sala a produto do Delivery → 400', attach.status === 400, `got ${attach.status}`);
+    }
+
+    // público: sem type = Delivery; type=dine_in mostra a Sala
+    const pubDelivery = await req('GET', `/public/stores/pizzaria-demo/menu`, {});
+    check('menu público sem type = Delivery (200)', pubDelivery.status === 200, `got ${pubDelivery.status}`);
+    check(
+      'menu público (delivery) NÃO tem a categoria da Sala',
+      Array.isArray(pubDelivery.json) && !pubDelivery.json.some((c) => c.id === created.catSala),
+    );
   } catch (e) {
     console.error('erro fatal durante os testes:', e);
     failed++;
@@ -281,6 +343,9 @@ async function main() {
       if (created.catB) await req('DELETE', `/catalog/categories/${created.catB}`, { token });
       if (foreign.productId) await prisma.product.delete({ where: { id: foreign.productId } }).catch(() => {});
       if (foreign.categoryId) await prisma.category.delete({ where: { id: foreign.categoryId } }).catch(() => {});
+      if (created.prodSala) await prisma.product.delete({ where: { id: created.prodSala } }).catch(() => {});
+      if (created.grpSala) await prisma.modifierGroup.delete({ where: { id: created.grpSala } }).catch(() => {});
+      if (created.catSala) await prisma.category.delete({ where: { id: created.catSala } }).catch(() => {});
     } catch (e) {
       console.error('  limpeza falhou:', e?.message ?? e);
     }

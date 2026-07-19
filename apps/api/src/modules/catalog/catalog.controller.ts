@@ -25,6 +25,7 @@ import {
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
+import { parseMenuType } from './menu-type.util';
 
 @ApiTags('catalog')
 @ApiBearerAuth()
@@ -36,19 +37,27 @@ export class CatalogController {
 
   // ----- Categorias -----
   @Get('categories')
-  listCategories(@TenantId() tenantId: string) {
-    return this.catalog.listCategories(tenantId);
+  listCategories(@TenantId() tenantId: string, @Query('menu') menu?: string) {
+    return this.catalog.listCategories(tenantId, parseMenuType(menu));
   }
 
   @Post('categories')
-  createCategory(@TenantId() tenantId: string, @Body() dto: CreateCategoryDto) {
-    return this.catalog.createCategory(tenantId, dto);
+  createCategory(
+    @TenantId() tenantId: string,
+    @Body() dto: CreateCategoryDto,
+    @Query('menu') menu?: string,
+  ) {
+    return this.catalog.createCategory(tenantId, parseMenuType(menu), dto);
   }
 
   // PUT (não @Patch) e declarado ANTES das rotas :id — senão o Nest resolve "reorder" como :id.
   @Put('categories/reorder')
-  reorderCategories(@TenantId() tenantId: string, @Body() dto: ReorderCategoriesDto) {
-    return this.catalog.reorderCategories(tenantId, dto.ids);
+  reorderCategories(
+    @TenantId() tenantId: string,
+    @Body() dto: ReorderCategoriesDto,
+    @Query('menu') menu?: string,
+  ) {
+    return this.catalog.reorderCategories(tenantId, parseMenuType(menu), dto.ids);
   }
 
   @Patch('categories/:id')
@@ -67,8 +76,12 @@ export class CatalogController {
 
   // ----- Produtos -----
   @Get('products')
-  listProducts(@TenantId() tenantId: string, @Query('categoryId') categoryId?: string) {
-    return this.catalog.listProducts(tenantId, categoryId);
+  listProducts(
+    @TenantId() tenantId: string,
+    @Query('categoryId') categoryId?: string,
+    @Query('menu') menu?: string,
+  ) {
+    return this.catalog.listProducts(tenantId, parseMenuType(menu), categoryId);
   }
 
   // PUT (não @Patch) e declarado ANTES das rotas :id — senão "reorder" vira :id → 404.
@@ -103,13 +116,17 @@ export class CatalogController {
 
   // ----- Grupos de modificadores (biblioteca) -----
   @Get('modifier-groups')
-  listModifierGroups(@TenantId() tenantId: string) {
-    return this.catalog.listModifierGroups(tenantId);
+  listModifierGroups(@TenantId() tenantId: string, @Query('menu') menu?: string) {
+    return this.catalog.listModifierGroups(tenantId, parseMenuType(menu));
   }
 
   @Post('modifier-groups')
-  createModifierGroup(@TenantId() tenantId: string, @Body() dto: CreateModifierGroupDto) {
-    return this.catalog.createModifierGroup(tenantId, dto);
+  createModifierGroup(
+    @TenantId() tenantId: string,
+    @Body() dto: CreateModifierGroupDto,
+    @Query('menu') menu?: string,
+  ) {
+    return this.catalog.createModifierGroup(tenantId, parseMenuType(menu), dto);
   }
 
   // ----- Ligação grupo ↔ produto -----

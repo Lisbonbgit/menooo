@@ -90,6 +90,11 @@ enum ReservationStatus {
   NO_SHOW // liberta a mesa para o resto da janela (disponibilidade só conta CONFIRMED)
 }
 
+enum MenuType {
+  DELIVERY // menu da loja online (entrega + levantamento) — o atual
+  DINE_IN  // menu servido ao cliente à mesa (via QR, Fase 2)
+}
+
 // ----------------------------------------------------------------------------
 // Tenant (restaurante)
 // ----------------------------------------------------------------------------
@@ -174,6 +179,7 @@ model Tenant {
   deliveryZones       DeliveryZone[]
   coupons             Coupon[]
   modifierGroups      ModifierGroup[]
+  menus               Menu[]
   tables              Table[]
   reservations        Reservation[]
   reservationWindows  ReservationWindow[] // EXPAND: substituída pela ReservationService; o DROP fica para um ciclo posterior
@@ -303,10 +309,28 @@ model RefreshToken {
 // Catálogo (menu)
 // ----------------------------------------------------------------------------
 
+// menu da loja: Delivery (loja online) ou Sala (dine-in via QR, Fase 2). Um por (tenant, tipo).
+model Menu {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  type      MenuType
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  categories     Category[]
+  modifierGroups ModifierGroup[]
+
+  @@unique([tenantId, type])
+  @@index([tenantId])
+}
+
 model Category {
   id        String  @id @default(cuid())
   tenantId  String
   tenant    Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  menuId    String
+  menu      Menu    @relation(fields: [menuId], references: [id], onDelete: Cascade)
   name      String
   sortOrder Int     @default(0)
   active    Boolean @default(true)
@@ -317,6 +341,7 @@ model Category {
   updatedAt DateTime @updatedAt
 
   @@index([tenantId])
+  @@index([menuId])
 }
 
 model Product {
@@ -348,6 +373,8 @@ model ModifierGroup {
   id        String     @id @default(cuid())
   tenantId  String
   tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  menuId    String
+  menu      Menu       @relation(fields: [menuId], references: [id], onDelete: Cascade)
   name      String
   required  Boolean    @default(false)
   minSelect Int        @default(0)
@@ -357,6 +384,7 @@ model ModifierGroup {
   productLinks ProductModifierGroup[]
 
   @@index([tenantId])
+  @@index([menuId])
 }
 
 // liga um grupo reutilizável a um produto (com ordem por produto)
