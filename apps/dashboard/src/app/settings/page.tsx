@@ -502,7 +502,9 @@ function BillingCard({ tenant }: { tenant: TenantSettings }) {
   }
 
   const stateMeta =
-    sub?.state === 'PAID'
+    sub?.state === 'LIFETIME'
+      ? { label: 'Ativa', cls: 'bg-green-100 text-green-800' }
+      : sub?.state === 'PAID'
       ? {
           label: `Paga até ${new Date(sub.paidUntil!).toLocaleDateString('pt-PT')}`,
           cls: 'bg-green-100 text-green-800',

@@ -37,7 +37,7 @@ interface TenantLite {
   isOpen: boolean;
   status: 'PENDING' | 'ACTIVE' | 'SUSPENDED' | 'CLOSED';
   subscription?: {
-    state: 'NONE' | 'TRIAL' | 'PAID' | 'EXPIRED';
+    state: 'NONE' | 'TRIAL' | 'PAID' | 'EXPIRED' | 'LIFETIME';
     trialEndsAt: string | null;
     paidUntil: string | null;
     daysLeft: number | null;
