@@ -373,4 +373,31 @@ export class OrdersService {
     if (!order) throw new NotFoundException('Encomenda não encontrada.');
     return order;
   }
+
+  /** Projeção pública mínima para a página de acompanhamento (sem telefone/morada/nome). */
+  async getPublicTracking(token: string) {
+    const order = await this.prisma.order.findUnique({
+      where: { trackToken: token },
+      select: {
+        number: true,
+        status: true,
+        type: true,
+        createdAt: true,
+        total: true,
+        tenant: { select: { name: true, slug: true } },
+        items: { select: { name: true, quantity: true } },
+      },
+    });
+    if (!order) throw new NotFoundException('Pedido não encontrado.');
+    return {
+      number: order.number,
+      status: order.status,
+      type: order.type,
+      createdAt: order.createdAt,
+      total: Number(order.total),
+      restaurantName: order.tenant.name,
+      slug: order.tenant.slug,
+      items: order.items.map((i) => ({ name: i.name, quantity: i.quantity })),
+    };
+  }
 }

@@ -417,12 +417,13 @@ model Modifier {
 // ----------------------------------------------------------------------------
 
 model Order {
-  id       String      @id @default(cuid())
-  tenantId String
-  tenant   Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  number   Int // número sequencial por tenant (legível)
-  status   OrderStatus @default(PENDING)
-  type     OrderType   @default(DELIVERY)
+  id         String      @id @default(cuid())
+  tenantId   String
+  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  number     Int // número sequencial por tenant (legível)
+  trackToken String      @unique @default(cuid()) // link privado de acompanhamento do pedido
+  status     OrderStatus @default(PENDING)
+  type       OrderType   @default(DELIVERY)
 
   // cliente (sem conta — checkout de convidado)
   customerName     String
