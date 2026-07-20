@@ -177,6 +177,7 @@ describe('MailService — emails de encomenda', () => {
     storeAddress: 'Rua das Flores 1, Lisboa',
     items: [{ name: 'Margherita', quantity: 2, lineTotal: 17 }],
     total: 17,
+    trackUrl: 'https://menooo.com/pizzaria-demo/pedido/tok123',
     ...over,
   });
 
@@ -236,6 +237,19 @@ describe('MailService — emails de encomenda', () => {
     const html = sendMail.mock.calls[0][0].html as string;
     expect(html).toContain('/pizzaria-demo');
     expect(html).toContain('Pedir novamente');
+  });
+
+  it('os 4 emails têm o botão "Acompanhar o pedido" com o trackUrl', async () => {
+    const trackUrl = 'https://menooo.com/pizzaria-demo/pedido/tok-abc';
+    await svc.sendOrderAccepted('ana@x.pt', 'Ana', info({ trackUrl }));
+    await svc.sendOrderReady('ana@x.pt', 'Ana', info({ trackUrl }));
+    await svc.sendOrderCompleted('ana@x.pt', 'Ana', info({ trackUrl }));
+    await svc.sendOrderCancelled('ana@x.pt', 'Ana', info({ trackUrl }));
+    for (const call of sendMail.mock.calls) {
+      const html = call[0].html as string;
+      expect(html).toContain('Acompanhar o pedido');
+      expect(html).toContain(trackUrl);
+    }
   });
 
   it('escapa o nome do cliente (anti-injeção no template)', async () => {

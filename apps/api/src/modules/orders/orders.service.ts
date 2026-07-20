@@ -280,6 +280,7 @@ export class OrdersService {
         lineTotal: Number(i.total),
       })),
       total: Number(order.total),
+      trackUrl: `${process.env.STORE_URL ?? 'https://menooo.com'}/${tenant.slug}/pedido/${order.trackToken}`,
     };
 
     switch (status) {
