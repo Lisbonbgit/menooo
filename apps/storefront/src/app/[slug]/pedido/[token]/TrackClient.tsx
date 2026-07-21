@@ -1,15 +1,26 @@
 'use client';
 
-import { useOrderTracking } from '@/lib/store-hooks';
+import { useOrderTracking, useStore } from '@/lib/store-hooks';
 import { stepsFor, currentStepIndex, isNegative } from '@/lib/order-status';
+import { StoreTheme } from '@/components/StoreTheme';
 
 export function TrackClient({ slug, token }: { slug: string; token: string }) {
   const { data, isLoading, isError } = useOrderTracking(token);
+  // Independente do fetch do pedido — a loja tem o seu próprio pedido, e o tema tem de se
+  // aplicar mesmo nos estados de carregamento/erro (mesmo padrão do ReservaClient).
+  const store = useStore(slug);
 
-  if (isLoading) return <main className="mx-auto max-w-lg p-6 text-center text-ink-mute">A carregar…</main>;
+  if (isLoading)
+    return (
+      <main className="mx-auto max-w-lg p-6 text-center text-ink-mute">
+        {store.data && <StoreTheme brandColor={store.data.brandColor} heroColor={store.data.heroColor} />}
+        A carregar…
+      </main>
+    );
   if (isError || !data)
     return (
       <main className="mx-auto max-w-lg p-6 text-center">
+        {store.data && <StoreTheme brandColor={store.data.brandColor} heroColor={store.data.heroColor} />}
         <p className="text-ink">Pedido não encontrado.</p>
         <a href={`/${slug}`} className="mt-3 inline-block text-brand-dark underline">Voltar à loja</a>
       </main>
@@ -21,6 +32,7 @@ export function TrackClient({ slug, token }: { slug: string; token: string }) {
 
   return (
     <main className="mx-auto max-w-lg p-6">
+      {store.data && <StoreTheme brandColor={store.data.brandColor} heroColor={store.data.heroColor} />}
       <header className="mb-5 text-center">
         <h1 className="font-display text-2xl font-semibold">{data.restaurantName}</h1>
         <p className="mt-1 text-[13px] text-ink-mute">Pedido nº {data.number}</p>
