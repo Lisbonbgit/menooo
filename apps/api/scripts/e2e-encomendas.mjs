@@ -94,6 +94,26 @@ async function main() {
   check('encomenda tem id', !!orderId);
   check('encomenda tem number legível', typeof create.json?.number === 'number');
 
+  console.log('— acompanhamento do pedido (token público)');
+  const trackToken = create.json?.trackToken;
+  check('POST devolve trackToken', typeof trackToken === 'string' && trackToken.length > 0, `got ${trackToken}`);
+  const track1 = await req('GET', `/public/orders/${trackToken}`);
+  check('GET acompanhamento → 200', track1.status === 200, `got ${track1.status}`);
+  check('estado inicial PENDING', track1.json?.status === 'PENDING', JSON.stringify(track1.json?.status));
+  check(
+    'projeção SEM telefone/morada',
+    !('customerPhone' in (track1.json || {})) && !('deliveryAddress' in (track1.json || {})),
+    JSON.stringify(Object.keys(track1.json || {})),
+  );
+  check('traz itens', Array.isArray(track1.json?.items) && track1.json.items.length > 0, JSON.stringify(track1.json?.items));
+  // avançar estado (staff, reaproveitando o login do dono) e ver refletir
+  await req('PATCH', `/orders/${orderId}/status`, { token, body: { status: 'ACCEPTED' } });
+  const track2 = await req('GET', `/public/orders/${trackToken}`);
+  check('acompanhamento reflete ACCEPTED', track2.json?.status === 'ACCEPTED', JSON.stringify(track2.json?.status));
+  // token inválido → 404 neutro
+  const badToken = await req('GET', `/public/orders/trk_inexistente`);
+  check('token inválido → 404', badToken.status === 404, `got ${badToken.status}`);
+
   const setStatus = async (status) => {
     const r = await req('PATCH', `/orders/${orderId}/status`, { token, body: { status } });
     check(`PATCH ${status} → 200`, r.status === 200, `got ${r.status} ${JSON.stringify(r.json)}`);

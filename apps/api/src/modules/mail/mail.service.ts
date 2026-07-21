@@ -42,6 +42,7 @@ export interface OrderMailInfo {
   storeAddress?: string | null;
   items: { name: string; quantity: number; lineTotal: number }[];
   total: number;
+  trackUrl: string;
 }
 
 /**
@@ -450,7 +451,8 @@ export class MailService {
         ) +
         this.p('Avisamos-te por email assim que estiver pronto.') +
         this.orderItems(info.items) +
-        this.p(`Total: <strong>${this.money(info.total)}</strong>`),
+        this.p(`Total: <strong>${this.money(info.total)}</strong>`) +
+        this.cta('Acompanhar o pedido', info.trackUrl),
     );
   }
 
@@ -469,7 +471,7 @@ export class MailService {
     await this.send(
       to,
       `Pedido nº ${info.number} pronto — ${info.restaurantName}`,
-      this.h('O teu pedido está pronto!') + corpo,
+      this.h('O teu pedido está pronto!') + corpo + this.cta('Acompanhar o pedido', info.trackUrl),
     );
   }
 
@@ -482,6 +484,7 @@ export class MailService {
           `Olá ${this.esc(customerName)}, obrigado pela tua encomenda na <strong>${this.esc(info.restaurantName)}</strong>.`,
         ) +
         this.p('Esperamos que gostes. Quando quiseres repetir, é a um clique de distância.') +
+        this.cta('Acompanhar o pedido', info.trackUrl) +
         this.cta('Pedir novamente', `${STORE_URL()}/${info.slug}`),
     );
   }
@@ -498,7 +501,8 @@ export class MailService {
           info.storePhone
             ? `Para esclarecimentos, contacta a ${this.esc(info.restaurantName)}: <strong>${this.esc(info.storePhone)}</strong>.`
             : `Para esclarecimentos, contacta a ${this.esc(info.restaurantName)}.`,
-        ),
+        ) +
+        this.cta('Acompanhar o pedido', info.trackUrl),
     );
   }
 }

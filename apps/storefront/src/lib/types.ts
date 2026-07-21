@@ -55,3 +55,16 @@ export interface MenuCategory {
   name: string;
   products: Product[];
 }
+
+export interface OrderTracking {
+  number: number;
+  status:
+    | 'PENDING' | 'ACCEPTED' | 'PREPARING' | 'READY'
+    | 'OUT_FOR_DELIVERY' | 'COMPLETED' | 'REJECTED' | 'CANCELLED';
+  type: 'DELIVERY' | 'PICKUP';
+  createdAt: string;
+  total: number;
+  restaurantName: string;
+  slug: string;
+  items: { name: string; quantity: number }[];
+}
