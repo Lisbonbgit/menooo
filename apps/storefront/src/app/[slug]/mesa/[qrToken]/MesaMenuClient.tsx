@@ -56,7 +56,7 @@ export function MesaMenuClient({ slug, qrToken }: { slug: string; qrToken: strin
         <p className="text-[13px] font-medium uppercase tracking-wide text-ink-mute">
           {s?.name ?? 'Menu'}
         </p>
-        <h1 className="mt-1 font-display text-3xl font-semibold tracking-tight">Mesa {t.name}</h1>
+        <h1 className="mt-1 font-display text-3xl font-semibold tracking-tight">{t.name}</h1>
       </header>
 
       <div className="space-y-10">

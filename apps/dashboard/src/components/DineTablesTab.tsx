@@ -25,7 +25,7 @@ function errorMessage(e: any, fallback: string): string {
 }
 
 function esc(s: string): string {
-  return s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!);
+  return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 }
 
 /** Abre uma janela só com o QR grande + "Mesa X" + o nome da loja, e imprime-a. */
