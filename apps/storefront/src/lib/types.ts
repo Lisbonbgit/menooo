@@ -56,6 +56,11 @@ export interface MenuCategory {
   products: Product[];
 }
 
+export interface TableInfo {
+  id: string;
+  name: string;
+}
+
 export interface OrderTracking {
   number: number;
   status:
