@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   Minus,
   Plus,
   Trash2,
-  CheckCircle2,
   ArrowLeft,
   Tag,
   Bike,
@@ -36,6 +36,7 @@ function localNow() {
 }
 
 export function CheckoutClient({ slug }: { slug: string }) {
+  const router = useRouter();
   const store = useStore(slug);
   const { items, storeSlug: cartSlug, setQuantity, removeItem, subtotal, clear } = useCartStore();
 
@@ -55,7 +56,6 @@ export function CheckoutClient({ slug }: { slug: string }) {
   const [payment, setPayment] = useState<PaymentMethod>('CASH');
   const [changeForInput, setChangeForInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [placed, setPlaced] = useState<{ number: number; total: string } | null>(null);
 
   const [couponInput, setCouponInput] = useState('');
   const [coupon, setCoupon] = useState<{ code: string; discount: number } | null>(null);
@@ -109,34 +109,6 @@ export function CheckoutClient({ slug }: { slug: string }) {
     payment === 'CASH' && !Number.isNaN(changeForNum) && changeForNum >= total
       ? changeForNum - total
       : null;
-
-  if (placed) {
-    return (
-      <main className="flex min-h-screen items-center justify-center px-4">
-        {s && <StoreTheme brandColor={s.brandColor} heroColor={s.heroColor} />}
-        <div className="animate-fade-up w-full max-w-sm rounded-3xl border border-line bg-white p-8 text-center shadow-lift">
-          <span className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
-            <CheckCircle2 className="text-green-600" size={34} />
-          </span>
-          <h1 className="font-display text-[26px] font-semibold">Encomenda enviada!</h1>
-          <p className="mt-3 rounded-xl bg-cream/70 py-3 font-display text-lg">
-            Pedido <strong>#{placed.number}</strong>
-            <span className="mx-2 text-ink-mute">·</span>
-            {Number(placed.total).toFixed(2)} €
-          </p>
-          <p className="mt-4 text-[13px] leading-relaxed text-ink-mute">
-            O restaurante vai confirmar a tua encomenda dentro de momentos. Obrigado.
-          </p>
-          <Link
-            href={`/${slug}`}
-            className="mt-6 block rounded-xl bg-brand py-3 text-[14px] font-semibold text-white shadow-card transition-colors hover:bg-brand-dark"
-          >
-            Voltar à loja
-          </Link>
-        </div>
-      </main>
-    );
-  }
 
   // o carrinho persistido pertence a OUTRA loja: nunca submeter aqui às cegas
   if (items.length > 0 && cartSlug && cartSlug !== slug) {
@@ -240,7 +212,7 @@ export function CheckoutClient({ slug }: { slug: string }) {
         })),
       });
       clear();
-      setPlaced({ number: data.number, total: data.total });
+      router.push(`/${slug}/pedido/${data.trackToken}`);
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? 'Não foi possível enviar a encomenda.');
     } finally {
