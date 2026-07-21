@@ -11,6 +11,7 @@ import { CatalogModule } from './modules/catalog/catalog.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { PromotionsModule } from './modules/promotions/promotions.module';
 import { ReservationsModule } from './modules/reservations/reservations.module';
+import { DineTablesModule } from './modules/dine-tables/dine-tables.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { HealthModule } from './modules/health/health.module';
@@ -30,6 +31,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
     OrdersModule,
     PromotionsModule,
     ReservationsModule,
+    DineTablesModule,
     AdminModule,
     BillingModule,
     HealthModule,

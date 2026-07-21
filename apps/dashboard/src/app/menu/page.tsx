@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { ImageUploader } from '@/components/ImageUploader';
+import { DineTablesTab } from '@/components/DineTablesTab';
 import {
   useCategories,
   useProducts,
@@ -35,10 +36,15 @@ import {
   useAttachGroup,
   useDetachGroup,
 } from '@/lib/catalog-hooks';
+import { useDineTables, type DineTable } from '@/lib/dine-tables-hooks';
+import { useTenant } from '@/lib/settings-hooks';
 import type { Category, MenuType, Product } from '@/lib/types';
 import { PersonalizacoesTab } from './PersonalizacoesTab';
 
-type MenuTab = 'geral' | 'personalizacoes';
+type MenuTab = 'geral' | 'personalizacoes' | 'qr' | 'preview';
+
+// URL público da loja: mesmo default usado noutras páginas do painel (ex.: settings/page.tsx).
+const STORE = process.env.NEXT_PUBLIC_STORE_URL ?? 'https://menooo.com';
 
 // taxas de IVA em Portugal (23 normal, 13 intermédia, 6 reduzida, 0 isento)
 const VAT_RATES = [23, 13, 6, 0];
@@ -68,6 +74,13 @@ export default function MenuPage() {
   const products = useProducts(menuAtivo);
   const createCategory = useCreateCategory(menuAtivo);
   const reorderCategories = useReorderCategories(menuAtivo);
+
+  // slug do tenant (QR/pré-visualização) — mesma query ['tenant-me'] usada noutras páginas.
+  const tenant = useTenant();
+  const slug = tenant.data?.slug;
+  // mesas de sala: só relevantes com o menu de Sala ativo, mas o painel fica sempre montado
+  // (hidden) como as outras abas, por isso o hook vive aqui em cima, sem `enabled`.
+  const dineTables = useDineTables();
 
   // Sobe/desce uma categoria uma posição. Envia a lista COMPLETA reindexada (a API recusa
   // subconjuntos). As setas ficam desativadas enquanto um reorder está em curso (serializar).
@@ -136,7 +149,15 @@ export default function MenuPage() {
         ).map(([id, label]) => (
           <button
             key={id}
-            onClick={() => setMenuAtivo(id)}
+            onClick={() => {
+              setMenuAtivo(id);
+              // as abas QR Code/Ver Menu só existem com Sala ativa — ao sair de Sala
+              // enquanto uma delas está aberta, volta para a Vista geral (senão ficava
+              // preso num painel escondido).
+              if (id !== 'dine_in') {
+                setTab((t) => (t === 'qr' || t === 'preview' ? 'geral' : t));
+              }
+            }}
             className={
               'rounded-lg px-4 py-1.5 text-[13px] font-semibold transition-colors ' +
               (menuAtivo === id ? 'bg-brand text-white' : 'text-ink-soft hover:bg-cream')
@@ -147,12 +168,18 @@ export default function MenuPage() {
         ))}
       </div>
 
-      {/* abas: produtos vs biblioteca de complementos */}
+      {/* abas: produtos vs biblioteca de complementos (+ QR Code/Ver Menu só em Sala) */}
       <div className="mb-5 flex w-fit gap-1 rounded-xl border border-line bg-white p-1 shadow-card">
         {(
           [
             ['geral', 'Vista geral'],
             ['personalizacoes', 'Personalizações'],
+            ...(menuAtivo === 'dine_in'
+              ? ([
+                  ['qr', 'QR Code'],
+                  ['preview', 'Ver Menu'],
+                ] as [MenuTab, string][])
+              : []),
           ] as [MenuTab, string][]
         ).map(([id, label]) => (
           <button
@@ -168,10 +195,18 @@ export default function MenuPage() {
         ))}
       </div>
 
-      {/* as duas abas ficam montadas (hidden) para não perder painéis
-          abertos e texto por guardar ao saltar para a biblioteca e voltar */}
+      {/* as abas ficam todas montadas (hidden) para não perder painéis
+          abertos e texto por guardar ao saltar de uma para a outra */}
       <div className={tab === 'personalizacoes' ? undefined : 'hidden'}>
         <PersonalizacoesTab menu={menuAtivo} />
+      </div>
+
+      <div className={tab === 'qr' ? undefined : 'hidden'}>
+        <DineTablesTab slug={slug} />
+      </div>
+
+      <div className={tab === 'preview' ? undefined : 'hidden'}>
+        <VerMenuPanel slug={slug} tables={dineTables.data} isLoading={dineTables.isLoading} />
       </div>
 
       <div className={tab === 'geral' ? undefined : 'hidden'}>
@@ -220,6 +255,44 @@ export default function MenuPage() {
         />
       )}
     </AppShell>
+  );
+}
+
+/** Sub-aba "Ver Menu": abre o menu de Sala tal como o cliente o vê, pela URL da 1.ª mesa ativa. */
+function VerMenuPanel({
+  slug,
+  tables,
+  isLoading,
+}: {
+  slug?: string;
+  tables?: DineTable[];
+  isLoading: boolean;
+}) {
+  if (isLoading) {
+    return <p className="text-ink-mute">A carregar…</p>;
+  }
+
+  const primeiraMesa = (tables ?? []).find((t) => t.active);
+
+  if (!slug || !primeiraMesa) {
+    return (
+      <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-line py-16 text-center">
+        <UtensilsCrossed size={30} className="text-ink-mute" strokeWidth={1.5} />
+        <p className="text-[13px] text-ink-mute">Cria uma mesa primeiro no separador QR Code.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-line py-16 text-center">
+      <p className="font-medium">Pré-visualiza o menu de Sala como o cliente o vê à mesa.</p>
+      <button
+        onClick={() => window.open(`${STORE}/${slug}/mesa/${primeiraMesa.qrToken}`, '_blank')}
+        className="mt-1 flex items-center gap-1.5 rounded-xl bg-brand px-4 py-2 text-[13.5px] font-semibold text-white shadow-card transition-colors hover:bg-brand-dark"
+      >
+        Abrir pré-visualização
+      </button>
+    </div>
   );
 }
 
