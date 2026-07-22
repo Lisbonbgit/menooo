@@ -55,6 +55,9 @@ export class TenantsService {
       // "aberto" efetivo = toggle manual E dentro do horário
       isOpen: computeOpenNow(tenant, openingHours),
       reservationsEnabled: rest.reservationsEnabled,
+      // Fase 2b (dine-in): o storefront usa isto para decidir se mostra carrinho na
+      // rota da mesa (`/[slug]/mesa/[qrToken]`) ou fica só-leitura (Fase 2a).
+      dineInOrderingEnabled: rest.dineInOrderingEnabled,
       // Contacto e morada SÓ para quem ligou as reservas. O campo "Morada" das Definições nunca
       // foi publicado até aqui — há donos que lá terão posto a morada de faturação, e publicá-la
       // para toda a gente por causa de uma funcionalidade que não usam seria uma fuga a sério.

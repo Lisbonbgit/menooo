@@ -14,6 +14,8 @@ export interface Store {
   minOrderValue: string;
   isOpen: boolean;
   reservationsEnabled: boolean;
+  /** Loja aceita pedidos feitos à mesa (Fase 2b) — decide se `/mesa/[qrToken]` mostra carrinho. */
+  dineInOrderingEnabled: boolean;
   // Só vêm no payload quando `reservationsEnabled` — a API não publica o contacto e a morada de
   // quem não usa reservas. Opcionais de propósito: o typecheck obriga a tratar a ausência.
   phone?: string | null;
