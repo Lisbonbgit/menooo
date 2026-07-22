@@ -28,6 +28,7 @@ export interface TenantSettings {
   deliveryFee: string;
   minOrderValue: string;
   isOpen: boolean;
+  dineInOrderingEnabled: boolean;
   subscription?: TenantSubscription;
   stripeSubscriptionId?: string | null;
 }

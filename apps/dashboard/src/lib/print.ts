@@ -40,7 +40,13 @@ export function receiptHtml(order: Order, storeName: string): string {
     .total { font-weight: bold; font-size: 14px; }
   </style></head><body onload="window.print()">
     <h1>${esc(storeName)}</h1>
-    <div class="center">${order.type === 'DELIVERY' ? 'ENTREGA' : 'TAKE-AWAY'}</div>
+    <div class="center">${
+      order.type === 'DELIVERY'
+        ? 'ENTREGA'
+        : order.type === 'DINE_IN'
+          ? esc((order.dineTable?.name ?? order.customerName).toUpperCase())
+          : 'TAKE-AWAY'
+    }</div>
     <div class="center"><strong>Encomenda #${order.number}</strong></div>
     <div class="center">${new Date(order.createdAt).toLocaleString('pt-PT')}</div>
     ${order.scheduledFor ? `<div class="center"><strong>Agendado: ${new Date(order.scheduledFor).toLocaleString('pt-PT')}</strong></div>` : ''}

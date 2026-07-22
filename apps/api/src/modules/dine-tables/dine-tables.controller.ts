@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import { DineTablesService } from './dine-tables.service';
@@ -52,5 +52,27 @@ export class DineTablesController {
   @Delete(':id')
   remove(@TenantId() tenantId: string, @Param('id') id: string) {
     return this.tables.remove(tenantId, id);
+  }
+
+  /**
+   * Contas (sessões) abertas das mesas de sala. `?status=open` é o único suportado por agora
+   * (histórico de sessões fechadas fica para outra fase). Declarado depois de ':id' acima não
+   * conflita: são 3 segmentos ('table-sessions/:id/close') vs. 1 (':id'), o router do Nest
+   * discrimina por forma do path, não por ordem de declaração.
+   */
+  @ApiBearerAuth()
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.OWNER, UserRole.STAFF)
+  @Get('table-sessions')
+  listOpenSessions(@TenantId() tenantId: string, @Query('status') _status?: string) {
+    return this.tables.listOpenSessions(tenantId);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.OWNER, UserRole.STAFF)
+  @Patch('table-sessions/:id/close')
+  closeSession(@TenantId() tenantId: string, @Param('id') id: string) {
+    return this.tables.closeSession(tenantId, id);
   }
 }

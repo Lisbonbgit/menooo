@@ -7,10 +7,8 @@ import { computeOpenNow } from '../tenants/open-now.util';
 import { isSubscriptionUsable } from '../tenants/subscription.util';
 import { PromotionsService } from '../promotions/promotions.service';
 import { MailService, OrderMailInfo } from '../mail/mail.service';
-
-// trabalhar em cêntimos evita erros de vírgula flutuante
-const toCents = (v: Prisma.Decimal | number | string) => Math.round(Number(v) * 100);
-const fromCents = (c: number) => c / 100;
+import { toCents, fromCents } from './money.util';
+import { buildOrderItems } from './order-items.util';
 
 // métodos de pagamento permitidos na Fase 2 (sem pagamento online)
 const OFFLINE_METHODS: PaymentMethod[] = [PaymentMethod.CASH, PaymentMethod.CARD_ON_DELIVERY];
@@ -76,56 +74,21 @@ export class OrdersService {
       throw new BadRequestException('Método de pagamento indisponível.');
     }
 
-    // carregar produtos pedidos (do tenant, ativos) com as suas opções
+    // carregar produtos pedidos (do tenant, ativos, do menu Delivery — isola os produtos
+    // de Sala/dine-in, que não fazem parte do checkout de entrega/levantamento) com as opções
     const productIds = [...new Set(dto.items.map((i) => i.productId))];
     const products = await this.prisma.product.findMany({
-      where: { id: { in: productIds }, tenantId: tenant.id, active: true },
+      where: {
+        id: { in: productIds },
+        tenantId: tenant.id,
+        active: true,
+        category: { menu: { type: 'DELIVERY' } },
+      },
       include: { modifierGroupLinks: { include: { group: { include: { modifiers: true } } } } },
     });
-    const productMap = new Map(products.map((p) => [p.id, p]));
 
     // construir as linhas da encomenda com preços do servidor
-    let subtotalCents = 0;
-    const itemsData: Prisma.OrderItemCreateWithoutOrderInput[] = [];
-    const vatLines: { lineCents: number; vatRate: number }[] = [];
-
-    for (const item of dto.items) {
-      const product = productMap.get(item.productId);
-      if (!product) {
-        throw new BadRequestException(`Produto indisponível: ${item.productId}`);
-      }
-
-      // opções válidas para este produto
-      const validModifiers = new Map(
-        product.modifierGroupLinks.flatMap((l) => l.group.modifiers).map((m) => [m.id, m]),
-      );
-
-      let unitCents = toCents(product.price);
-      const chosenModifiers: Prisma.OrderItemModifierCreateWithoutOrderItemInput[] = [];
-
-      for (const modId of item.modifierIds ?? []) {
-        const mod = validModifiers.get(modId);
-        if (!mod) {
-          throw new BadRequestException(`Opção inválida para "${product.name}".`);
-        }
-        unitCents += toCents(mod.priceDelta);
-        chosenModifiers.push({ name: mod.name, priceDelta: mod.priceDelta });
-      }
-
-      const lineCents = unitCents * item.quantity;
-      subtotalCents += lineCents;
-      vatLines.push({ lineCents, vatRate: product.vatRate });
-
-      itemsData.push({
-        productId: product.id,
-        name: product.name,
-        quantity: item.quantity,
-        unitPrice: fromCents(unitCents),
-        total: fromCents(lineCents),
-        vatRate: product.vatRate,
-        modifiers: chosenModifiers.length ? { create: chosenModifiers } : undefined,
-      });
-    }
+    const { itemsData, subtotalCents, vatLines } = buildOrderItems(products, dto.items);
 
     // valor mínimo de encomenda (da zona, se aplicável)
     if (delivery.minOrderCents > 0 && subtotalCents < delivery.minOrderCents) {
@@ -362,14 +325,14 @@ export class OrdersService {
     return this.prisma.order.findMany({
       where: { tenantId },
       orderBy: { createdAt: 'desc' },
-      include: { items: { include: { modifiers: true } } },
+      include: { items: { include: { modifiers: true } }, dineTable: { select: { name: true } } },
     });
   }
 
   async getForTenant(tenantId: string, id: string) {
     const order = await this.prisma.order.findFirst({
       where: { id, tenantId },
-      include: { items: { include: { modifiers: true } } },
+      include: { items: { include: { modifiers: true } }, dineTable: { select: { name: true } } },
     });
     if (!order) throw new NotFoundException('Encomenda não encontrada.');
     return order;
