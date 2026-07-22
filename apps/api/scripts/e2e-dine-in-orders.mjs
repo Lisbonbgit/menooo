@@ -1,8 +1,9 @@
 /**
  * E2e do pedido na mesa + sessão (Fase 2b, Task 2): gate `dineInOrderingEnabled`, ISOLAMENTO de
- * menu (só produtos de Sala), ISOLAMENTO de QR (slug+qrToken têm de bater os dois), e o ciclo de
+ * menu (só produtos de Sala), ISOLAMENTO de QR (slug+qrToken têm de bater os dois), o ciclo de
  * vida da `TableSession` (abre no 1º pedido, acumula no 2º, fecha, novo pedido depois de fechar
- * abre outra sessão).
+ * abre outra sessão), e que o TOTAL da sessão exclui pedidos RECUSADOS/CANCELADOS (fix pós-review:
+ * o balcão não pode cobrar um pedido que a cozinha recusou).
  *
  * Requer a stack local: DB :5433 + API em http://localhost:3001 (build/watch).
  *   node scripts/e2e-dine-in-orders.mjs
@@ -216,6 +217,33 @@ async function main() {
     check('sessão é a da mesa certa', session1?.table === tableName, JSON.stringify(session1?.table));
     check('sessão tem 2 pedidos', session1?.orders?.length === 2, JSON.stringify(session1?.orders?.length));
     check('total da sessão = 15 (10+5)', Number(session1?.total) === 15, JSON.stringify(session1?.total));
+
+    // =========================================================================
+    // 6b. TOTAL EXCLUI RECUSADO (crítico, fix pós-review): novo pedido na mesma
+    // mesa, staff recusa-o (PENDING -> REJECTED), o total da sessão mantém-se
+    // (não soma o pedido recusado) embora a lista `orders` continue a incluí-lo.
+    // =========================================================================
+    console.log('— 6b. total exclui pedido recusado');
+    const orderRej = await req('POST', `/public/stores/${slugB}/mesa/${qrTokenB}/orders`, {
+      body: pedido(salaProductId, 3), // 3× 5€ = 15€ — se entrasse no total, duplicava-o (15 -> 30)
+    });
+    check('pedido a recusar 201', orderRej.status === 201, `got ${orderRej.status} ${JSON.stringify(orderRej.json)}`);
+    check('pedido a recusar na mesma sessão', orderRej.json?.tableSessionId === sessionId1,
+      `${orderRej.json?.tableSessionId} !== ${sessionId1}`);
+    const rejectRes = await req('PATCH', `/orders/${orderRej.json?.id}/status`, {
+      token: tokenB,
+      body: { status: 'REJECTED' },
+    });
+    check('PATCH /orders/:id/status REJECTED 200', rejectRes.status === 200,
+      `got ${rejectRes.status} ${JSON.stringify(rejectRes.json)}`);
+    check('estado devolvido REJECTED', rejectRes.json?.status === 'REJECTED', JSON.stringify(rejectRes.json?.status));
+    const openListRej = await req('GET', '/dine-tables/table-sessions?status=open', { token: tokenB });
+    const sessionRej = openListRej.json?.find((s) => s.id === sessionId1);
+    check('sessão ainda aberta após recusa', !!sessionRej, JSON.stringify(openListRej.json));
+    check('sessão tem 3 pedidos (2 válidos + 1 recusado)', sessionRej?.orders?.length === 3,
+      JSON.stringify(sessionRej?.orders?.length));
+    check('*** TOTAL EXCLUI RECUSADO *** total mantém-se em 15 (não 30)', Number(sessionRej?.total) === 15,
+      JSON.stringify(sessionRej?.total));
 
     // =========================================================================
     // 7. PATCH /dine-tables/table-sessions/:id/close → ok; GET open → 0

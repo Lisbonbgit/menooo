@@ -95,7 +95,7 @@ function orderTypeIcon(order: Order) {
 }
 function orderTypeLabel(order: Order) {
   if (order.type === 'DELIVERY') return 'Entrega';
-  if (order.type === 'DINE_IN') return `Mesa ${order.dineTable?.name ?? '?'}`;
+  if (order.type === 'DINE_IN') return order.dineTable?.name ?? order.customerName ?? '—';
   return 'Take-away';
 }
 

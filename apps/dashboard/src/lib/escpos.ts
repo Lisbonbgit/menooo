@@ -92,7 +92,13 @@ export function buildReceiptBytes(order: Order, opts: ReceiptOptions): Uint8Arra
   const b = new EscPosBuilder(opts.width ?? 42);
 
   b.init().align(1).bold(true).size(0x11).line(opts.storeName).size(0).bold(false);
-  b.align(1).line(order.type === 'DELIVERY' ? 'ENTREGA' : 'TAKE-AWAY');
+  b.align(1).line(
+    order.type === 'DELIVERY'
+      ? 'ENTREGA'
+      : order.type === 'DINE_IN'
+        ? (order.dineTable?.name ?? order.customerName).toUpperCase()
+        : 'TAKE-AWAY',
+  );
   b.feed(1).align(0);
 
   b.bold(true).size(0x01).line(`Encomenda #${order.number}`).size(0).bold(false);

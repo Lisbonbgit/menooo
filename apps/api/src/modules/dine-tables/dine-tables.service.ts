@@ -145,7 +145,7 @@ export class DineTablesService {
           notes: dto.notes,
           items: { create: itemsData },
         },
-        include: { items: { include: { modifiers: true } } },
+        include: { items: { include: { modifiers: true } }, dineTable: { select: { name: true } } },
       });
     });
     this.gateway.emitNewOrder(table.tenantId, order);
@@ -167,7 +167,10 @@ export class DineTablesService {
       table: s.dineTable.name,
       openedAt: s.openedAt,
       orders: s.orders.map((o) => ({ ...o, total: Number(o.total) })),
-      total: s.orders.reduce((a, o) => a + Number(o.total), 0),
+      // exclui recusados/cancelados: o balcão cobra o que fica, não o que se pediu
+      total: s.orders
+        .filter((o) => o.status !== 'REJECTED' && o.status !== 'CANCELLED')
+        .reduce((a, o) => a + Number(o.total), 0),
     }));
   }
 

@@ -12,7 +12,7 @@ export class PublicDineOrderController {
   constructor(private readonly tables: DineTablesService) {}
 
   @Public()
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Throttle({ default: { limit: 40, ttl: 60_000 } })
   @Post(':slug/mesa/:qrToken/orders')
   create(@Param('slug') slug: string, @Param('qrToken') qrToken: string, @Body() dto: CreateDineOrderDto) {
     return this.tables.createDineInOrder(slug, qrToken, dto);
