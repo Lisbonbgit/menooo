@@ -70,13 +70,13 @@ async function main() {
   // com folga qualquer mínimo razoável, a partir do preço real do produto.
   const preco = Number(produto.price) || 5;
   const qty = Math.max(1, Math.ceil(15 / preco));
-  const novoPedido = (nome, email) => ({
+  const novoPedido = (nome, email, itemQty = qty, itemProductId = productId) => ({
     type: 'PICKUP',
     customerName: nome,
     customerPhone: '912000000',
     customerEmail: email,
     paymentMethod: 'CASH',
-    items: [{ productId, quantity: qty }],
+    items: [{ productId: itemProductId, quantity: itemQty }],
   });
 
   console.log(`— criar encomenda pública (PICKUP, ${qty}× produto, com email)`);
@@ -138,6 +138,51 @@ async function main() {
   if (create2.status === 201 || create2.status === 200) {
     const rej = await req('PATCH', `/orders/${create2.json.id}/status`, { token, body: { status: 'REJECTED' } });
     check('PATCH REJECTED → 200', rej.status === 200, `got ${rej.status}`);
+  }
+
+  // ==========================================================================
+  // ISOLAMENTO DE MENU (crítico): um produto do menu Sala (dine-in) não pode
+  // ser pedido pelo checkout público de entrega/levantamento — createPublicOrder
+  // só busca produtos do menu Delivery. Cria a categoria+produto de Sala via os
+  // endpoints autenticados do catálogo, tenta pedi-lo pelo checkout público e
+  // espera 400 "Produto indisponível" (o mesmo erro de um productId inexistente).
+  // ==========================================================================
+  console.log('— ISOLAMENTO: produto do menu Sala não pode ser pedido no checkout público');
+  const salaCat = await req('POST', '/catalog/categories?menu=dine_in', {
+    token,
+    body: { name: `Sala E2E ${Date.now()}` },
+  });
+  check('categoria de Sala criada 201', salaCat.status === 201, `got ${salaCat.status} ${JSON.stringify(salaCat.json)}`);
+  const salaCategoryId = salaCat.json?.id;
+
+  let salaProductId;
+  if (salaCategoryId) {
+    const salaProd = await req('POST', '/catalog/products', {
+      token,
+      body: { categoryId: salaCategoryId, name: 'Produto Sala E2E', price: 5 },
+    });
+    check('produto de Sala criado 201', salaProd.status === 201, `got ${salaProd.status} ${JSON.stringify(salaProd.json)}`);
+    salaProductId = salaProd.json?.id;
+  }
+
+  if (salaProductId) {
+    const isolamento = await req('POST', `/public/stores/${SLUG}/orders`, {
+      body: novoPedido('Cliente Isolamento E2E', 'cliente.isolamento@exemplo.pt', 1, salaProductId),
+    });
+    if (isolamento.status === 400 && /fechad/i.test(isolamento.json?.message ?? '')) {
+      console.log(`  loja fechada à hora do teste — SKIP do check de isolamento (ambiental)`);
+    } else {
+      check(
+        '*** ISOLAMENTO *** produto de Sala no checkout público → 400 "Produto indisponível"',
+        isolamento.status === 400 && /indispon[ií]vel/i.test(isolamento.json?.message ?? ''),
+        `got ${isolamento.status} ${JSON.stringify(isolamento.json)}`,
+      );
+    }
+    // limpeza: apagar o produto e a categoria de teste (best-effort, não faz parte do check)
+    await req('DELETE', `/catalog/products/${salaProductId}`, { token });
+  }
+  if (salaCategoryId) {
+    await req('DELETE', `/catalog/categories/${salaCategoryId}`, { token });
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);

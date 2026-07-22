@@ -51,6 +51,7 @@ enum UserStatus {
 enum OrderType {
   DELIVERY // entrega ao domicílio
   PICKUP // take-away / levantamento
+  DINE_IN // pedido feito à mesa (Fase 2b)
 }
 
 enum OrderStatus {
@@ -157,6 +158,9 @@ model Tenant {
   minOrderValue   Decimal @default(0) @db.Decimal(10, 2)
   isOpen          Boolean @default(false) // toggle manual de aberto/fechado
 
+  // pedir à mesa (Fase 2b) — liga o checkout dine-in a partir do menu de Sala
+  dineInOrderingEnabled Boolean @default(false)
+
   // emparelhamento do tablet de cozinha (código de uso-único, ver spec app-cozinha)
   kitchenPairId        String?   @unique // parte pública do código (lookup indexado)
   kitchenPairHash      String? // argon2 do segredo do código
@@ -183,6 +187,7 @@ model Tenant {
   menus               Menu[]
   tables              Table[]
   dineTables          DineTable[]
+  tableSessions       TableSession[]
   reservations        Reservation[]
   reservationWindows  ReservationWindow[] // EXPAND: substituída pela ReservationService; o DROP fica para um ciclo posterior
   reservationServices ReservationService[]
@@ -426,6 +431,12 @@ model Order {
   status     OrderStatus @default(PENDING)
   type       OrderType   @default(DELIVERY)
 
+  // dine-in (Fase 2b): mesa + sessão da conta, quando type = DINE_IN (nullable: delivery/levantamento não têm)
+  dineTableId    String?
+  dineTable      DineTable?    @relation(fields: [dineTableId], references: [id])
+  tableSessionId String?
+  tableSession   TableSession? @relation(fields: [tableSessionId], references: [id])
+
   // cliente (sem conta — checkout de convidado)
   customerName     String
   customerPhone    String
@@ -526,7 +537,27 @@ model DineTable {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  sessions TableSession[]
+  orders   Order[]
+
   @@index([tenantId])
+}
+
+// sessão de conta aberta numa mesa de sala (dine-in QR) — agrupa os pedidos feitos
+// à mesa até a conta ser fechada; no máximo uma OPEN por mesa (unique parcial na migração).
+model TableSession {
+  id          String    @id @default(cuid())
+  tenantId    String
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  dineTableId String
+  dineTable   DineTable @relation(fields: [dineTableId], references: [id], onDelete: Cascade)
+  status      String    @default("OPEN")
+  openedAt    DateTime  @default(now())
+  closedAt    DateTime?
+  orders      Order[]
+
+  @@index([tenantId, status])
+  @@index([dineTableId])
 }
 
 model Reservation {
