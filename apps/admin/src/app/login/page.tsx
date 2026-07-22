@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { Flame, ShieldCheck } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth-store';
+import { PasswordInput } from '@/components/PasswordInput';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -60,12 +61,12 @@ export default function LoginPage() {
         />
 
         <label className="mb-1.5 block text-[13px] font-medium">Password</label>
-        <input
-          type="password"
+        <PasswordInput
           required
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="mb-6 w-full rounded-xl border border-line bg-white px-3.5 py-2.5 text-[14px] outline-none transition-colors focus:border-brand"
+          containerClassName="mb-6"
+          className="w-full rounded-xl border border-line bg-white px-3.5 py-2.5 text-[14px] outline-none transition-colors focus:border-brand"
         />
 
         <button

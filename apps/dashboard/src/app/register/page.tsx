@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { Flame, Store, ArrowRight, Percent, BellRing, Printer, Clock } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth-store';
+import { PasswordInput } from '@/components/PasswordInput';
 
 const STORE_URL = process.env.NEXT_PUBLIC_STORE_URL ?? 'http://187.124.4.163:8080';
 
@@ -183,14 +184,14 @@ export default function RegisterPage() {
           />
 
           <label className="mb-1.5 block text-[13px] font-medium">Password</label>
-          <input
-            type="password"
+          <PasswordInput
             required
             minLength={8}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="mínimo 8 caracteres"
-            className={`${inputCls} mb-6`}
+            containerClassName="mb-6"
+            className={inputCls}
           />
 
           <label className="mb-1.5 block text-[13px] font-medium">

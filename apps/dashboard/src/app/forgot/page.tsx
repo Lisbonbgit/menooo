@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Flame, KeyRound } from 'lucide-react';
 import { api } from '@/lib/api';
+import { PasswordInput } from '@/components/PasswordInput';
 
 const input =
   'w-full rounded-xl border border-line bg-white px-3.5 py-2.5 text-[14px] shadow-card outline-none transition-colors focus:border-brand';
@@ -102,14 +103,14 @@ export default function ForgotPasswordPage() {
               className={`${input} mb-4 text-center font-display text-[22px] tracking-[0.4em]`}
             />
             <label className="mb-1.5 block text-[13px] font-medium">Password nova</label>
-            <input
-              type="password"
+            <PasswordInput
               required
               minLength={8}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="mínimo 8 caracteres"
-              className={`${input} mb-6`}
+              containerClassName="mb-6"
+              className={input}
             />
             <button
               type="submit"
