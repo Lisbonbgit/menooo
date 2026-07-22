@@ -15,6 +15,7 @@ import {
   Check,
   Bike,
   ShoppingBag,
+  Utensils,
   Palette,
   Tablet,
 } from 'lucide-react';
@@ -68,6 +69,7 @@ export default function SettingsPage() {
     deliveryFee: '0',
     minOrderValue: '0',
     isOpen: false,
+    dineInOrderingEnabled: false,
   });
 
   const [days, setDays] = useState<DayRow[]>(
@@ -88,6 +90,7 @@ export default function SettingsPage() {
         deliveryFee: String(t.deliveryFee),
         minOrderValue: String(t.minOrderValue),
         isOpen: t.isOpen,
+        dineInOrderingEnabled: t.dineInOrderingEnabled,
       });
     }
   }, [tenant.data]);
@@ -230,6 +233,16 @@ export default function SettingsPage() {
             setForm((f) => ({ ...f, acceptsPickup: next }));
             await updateTenant.mutateAsync({ acceptsPickup: next });
             toast.success(next ? 'Levantamento ativado' : 'Levantamento desativado');
+          }}
+        />
+        <ServiceToggle
+          icon={<Utensils size={15} />}
+          label="Aceitar pedidos na mesa"
+          on={form.dineInOrderingEnabled}
+          onToggle={async (next) => {
+            setForm((f) => ({ ...f, dineInOrderingEnabled: next }));
+            await updateTenant.mutateAsync({ dineInOrderingEnabled: next });
+            toast.success(next ? 'Pedidos na mesa ativados' : 'Pedidos na mesa desativados');
           }}
         />
       </section>

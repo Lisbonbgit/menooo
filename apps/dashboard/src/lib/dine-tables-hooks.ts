@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from './api';
+import type { OrderStatus } from './types';
 
 /** Mesa de sala (dine-in QR) — separada das mesas de reservas (Table/reservation-types). */
 export interface DineTable {
@@ -50,5 +51,49 @@ export function useDeleteDineTable() {
   return useMutation({
     mutationFn: async (id: string) => (await api.delete(`/dine-tables/${id}`)).data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['dine-tables'] }),
+  });
+}
+
+// ==========================================================================
+// Contas (sessões) abertas das mesas de sala (Fase 2b, Task 4) — a Receção
+// usa isto para mostrar "Mesas abertas" + o botão "Fechar mesa".
+// ==========================================================================
+
+export interface OpenSessionOrder {
+  id: string;
+  number: number;
+  status: OrderStatus;
+  total: number;
+  createdAt: string;
+}
+
+export interface OpenTableSession {
+  id: string;
+  table: string;
+  openedAt: string;
+  orders: OpenSessionOrder[];
+  total: number;
+}
+
+/**
+ * Sessões abertas (contas por fechar) de todas as mesas de sala. Sondagem curta em vez de
+ * um evento de socket dedicado — a Receção já atualiza pedidos ao vivo, mas uma mesa pode
+ * abrir/fechar sem nenhum pedido novo (ex.: outro membro da equipa fechou-a entretanto).
+ */
+export function useOpenSessions() {
+  return useQuery({
+    queryKey: ['open-sessions'],
+    queryFn: async () =>
+      (await api.get<OpenTableSession[]>('/dine-tables/table-sessions', { params: { status: 'open' } }))
+        .data,
+    refetchInterval: 15_000,
+  });
+}
+
+export function useCloseSession() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => (await api.patch(`/dine-tables/table-sessions/${id}/close`)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['open-sessions'] }),
   });
 }

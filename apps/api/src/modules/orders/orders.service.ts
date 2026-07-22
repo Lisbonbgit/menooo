@@ -325,14 +325,14 @@ export class OrdersService {
     return this.prisma.order.findMany({
       where: { tenantId },
       orderBy: { createdAt: 'desc' },
-      include: { items: { include: { modifiers: true } } },
+      include: { items: { include: { modifiers: true } }, dineTable: { select: { name: true } } },
     });
   }
 
   async getForTenant(tenantId: string, id: string) {
     const order = await this.prisma.order.findFirst({
       where: { id, tenantId },
-      include: { items: { include: { modifiers: true } } },
+      include: { items: { include: { modifiers: true } }, dineTable: { select: { name: true } } },
     });
     if (!order) throw new NotFoundException('Encomenda não encontrada.');
     return order;

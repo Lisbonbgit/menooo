@@ -7,6 +7,7 @@ import { clsx } from 'clsx';
 import {
   Bike,
   ShoppingBag,
+  Utensils,
   Wifi,
   WifiOff,
   Printer,
@@ -27,6 +28,7 @@ import { usePrintStore } from '@/lib/print-store';
 import { printOrder, type PrintVia } from '@/lib/print';
 import { AppShell } from '@/components/AppShell';
 import { PrinterSettings } from '@/components/PrinterSettings';
+import { OpenTables } from '@/components/OpenTables';
 import type { Order, OrderStatus } from '@/lib/types';
 
 const COLUMNS: {
@@ -82,6 +84,19 @@ function elapsed(iso: string) {
 // talão que se perdia no balcão horas antes da hora)
 function isFutureScheduled(order: Order): boolean {
   return !!order.scheduledFor && new Date(order.scheduledFor).getTime() > Date.now() + 15 * 60_000;
+}
+
+// tipo de serviço do pedido — ícone + rótulo partilhados pelo cartão ativo e pelo modal
+// de detalhes do histórico. Mesa (DINE_IN, Fase 2b) mostra o nome da mesa em vez de "Take-away".
+function orderTypeIcon(order: Order) {
+  if (order.type === 'DELIVERY') return <Bike size={13} />;
+  if (order.type === 'DINE_IN') return <Utensils size={13} />;
+  return <ShoppingBag size={13} />;
+}
+function orderTypeLabel(order: Order) {
+  if (order.type === 'DELIVERY') return 'Entrega';
+  if (order.type === 'DINE_IN') return `Mesa ${order.dineTable?.name ?? '?'}`;
+  return 'Take-away';
 }
 
 function nextActions(
@@ -218,6 +233,8 @@ export default function OrdersPage() {
         </>
       }
     >
+      <OpenTables />
+
       {pendingOrders.length > 0 && (
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
           <p className="flex items-center gap-2 text-[13px] text-red-800">
@@ -364,8 +381,8 @@ function OrderCard({
         <div>
           <p className="font-display text-lg font-semibold leading-none">#{order.number}</p>
           <p className="mt-1.5 flex items-center gap-1.5 text-[12px] text-ink-soft">
-            {order.type === 'DELIVERY' ? <Bike size={13} /> : <ShoppingBag size={13} />}
-            {order.type === 'DELIVERY' ? 'Entrega' : 'Take-away'}
+            {orderTypeIcon(order)}
+            {orderTypeLabel(order)}
             <span className="text-ink-mute">· há {elapsed(order.createdAt)}</span>
           </p>
         </div>
@@ -511,8 +528,8 @@ function OrderDetailModal({
           <div>
             <p className="font-display text-xl font-semibold leading-none">#{order.number}</p>
             <p className="mt-1.5 flex items-center gap-1.5 text-[12px] text-ink-soft">
-              {order.type === 'DELIVERY' ? <Bike size={13} /> : <ShoppingBag size={13} />}
-              {order.type === 'DELIVERY' ? 'Entrega' : 'Take-away'}
+              {orderTypeIcon(order)}
+              {orderTypeLabel(order)}
               <span className="text-ink-mute">· {scheduledLabel(order.createdAt)}</span>
             </p>
           </div>

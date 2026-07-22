@@ -60,6 +60,11 @@ export class UpdateTenantDto {
   @IsBoolean()
   acceptsPickup?: boolean;
 
+  // Fase 2b (dine-in): liga/desliga o checkout na rota da mesa (`/[slug]/mesa/[qrToken]`).
+  @IsOptional()
+  @IsBoolean()
+  dineInOrderingEnabled?: boolean;
+
   @IsOptional()
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)

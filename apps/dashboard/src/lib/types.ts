@@ -68,7 +68,7 @@ export interface Order {
   id: string;
   number: number;
   status: OrderStatus;
-  type: 'DELIVERY' | 'PICKUP';
+  type: 'DELIVERY' | 'PICKUP' | 'DINE_IN';
   customerName: string;
   customerPhone: string;
   customerEmail: string | null;
@@ -88,4 +88,6 @@ export interface Order {
   changeFor: string | null;
   createdAt: string;
   items: OrderItem[];
+  /** Só em pedidos DINE_IN (mesa de sala) — nome da mesa. */
+  dineTable?: { name: string } | null;
 }
